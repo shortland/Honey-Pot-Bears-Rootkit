@@ -13,3 +13,6 @@
 [Ibrahim Khan](https://github.com/khan-ibrahim)
 
 [David Song](https://github.com/songdavid98)
+
+Link for linux module guide
+https://www.tldp.org/LDP/lkmpg/2.6/html/x121.html
