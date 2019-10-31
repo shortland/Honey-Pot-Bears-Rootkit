@@ -14,6 +14,16 @@
 
 [David Song](https://github.com/songdavid98)
 
+## Work Distribution
+
+1. Jenny - Hide specific files and directories from showing up when a user does "ls" and similar commands (you have to come up with a protocol that allows attackers to change these)
+
+2. Ilan - Modify the /etc/passwd and /etc/shadow file to add a backdoor account while returning the original contents of the files (pre-attack) when a normal user requests to see the file
+
+3. David - Hides specific processes from the process table when a user does a "ps"
+
+4. Ibrahim - Give the ability to a malicious process to elevate its uid to 0 (root) upon demand (again this involves coming up with a protocol for doing that)
+
 ## Resources
 
 [Linux Kernel Module Programming Guide](https://www.tldp.org/LDP/lkmpg/2.6/html/x121.html)
