@@ -26,10 +26,13 @@
 
 ## Resources Used
 [Linux Kernel Module Programming Guide](https://www.tldp.org/LDP/lkmpg/2.6/html/x121.html)
+
 [Updated LKMPG (see 4.15.2)](https://gitlab.com/bashrc2/LKMPG)
+
 [Trail of Bits](https://blog.trailofbits.com/2019/01/17/how-to-write-a-rootkit-without-really-trying/)
 
-##Notes
+## Notes
+
 Currently tested on Ubuntu server 18.04.3 (shouldn't make a difference on desktop) & linuxkernel: 14.15.0-70-generic
 
 See output by typing journalctl --since "5 minutes ago"
