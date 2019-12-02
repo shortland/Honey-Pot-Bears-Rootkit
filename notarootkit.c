@@ -27,16 +27,17 @@ MODULE_DESCRIPTION("TOTALLY NOT A ROOTKIT");
 static unsigned long *sys_call_table;
 static void* real_read;
 static void* real_openat;
+static void* real_syscall_functions[2];
 static int sys_call_indices[] = {__NR_read, __NR_openat};
 
 asmlinkage long totallyReal_read(int fd, char __user *buf, size_t count) {
 	pr_info("Intercepted read of fd=%d, %lu byes\n", fd, count);
-	return ((typeof(sys_read)*)(real_read))(fd, buf, count);
+	return ((typeof(sys_read)*)(real_syscall_functions[0]))(fd, buf, count);
 }
 
 asmlinkage long totallyReal_openat(int dirfd, const char *pathname, int flags, mode_t mode){
 	pr_info("openAt called (mkdir?) path:%s\n", pathname);
-	return ((typeof(sys_openat)*)(real_openat))(dirfd, pathname, flags, mode);
+	return ((typeof(sys_openat)*)(real_syscall_functions[1]))(dirfd, pathname, flags, mode);
 }
 
 /*asmlinkage int totallyReal_mkdir(const char __user *pathname, umode_t mode){
@@ -56,16 +57,16 @@ int __init loadMod(void){
 	pr_info("sys_call_table pointer is %p\n", sys_call_table);
 
 	//saves original read syscall, injects fake read syscall
-	real_read = (void*) sys_call_table[sys_call_indices[0]];
-	pr_info("original read stored as %p\n", real_read);
+	real_syscall_functions[0] = (void*) sys_call_table[sys_call_indices[0]];
+	pr_info("original read stored as %p\n", real_syscall_functions[0]);
 	CR0_WRITE_UNLOCK({
 		sys_call_table[sys_call_indices[0]] = (void *) &totallyReal_read;
 	});
 	pr_info("sys_call_table injected with phony_read ptr:%p\n", (void *)sys_call_table[sys_call_indices[0]]);
 
 	//saves original open syscall, injects fake open syscall
-	real_openat = (void *)sys_call_table[__NR_openat];
-	pr_info("original openat stored as %p\n", real_openat);
+	real_syscall_functions[1] = (void *)sys_call_table[__NR_openat];
+	pr_info("original openat stored as %p\n", real_syscall_functions[1]);
 	CR0_WRITE_UNLOCK({
 		sys_call_table[sys_call_indices[1]] = (void *) &totallyReal_openat;
 	});
@@ -84,8 +85,8 @@ void __exit unloadMod(void){
 	pr_info("notarootkit unloading\n");
 	
 	CR0_WRITE_UNLOCK({
-		sys_call_table[__NR_read] = real_read;
-		sys_call_table[__NR_openat] = real_openat;
+		sys_call_table[__NR_read] = real_syscall_functions[0];
+		sys_call_table[__NR_openat] = real_syscall_functions[1];
 	});
 	pr_info("sys_call_table read ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_read]);	
 	pr_info("sys_call_table openat ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_openat]);
