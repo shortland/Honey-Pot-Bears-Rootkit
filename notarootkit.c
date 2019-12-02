@@ -86,8 +86,8 @@ void __exit unloadMod(void){
 		sys_call_table[__NR_read] = real_read;
 		sys_call_table[__NR_openat] = real_openat;
 	});
+	pr_info("sys_call_table read ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_read]);	
 	pr_info("sys_call_table openat ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_openat]);
-	pr_info("sys_call_table read ptr replaced, now as :%p\n", (void *)sys_call_table[__NR_read]);
 	pr_info("notarootkit unloaded\n");
 	return;
 }
