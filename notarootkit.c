@@ -62,7 +62,7 @@ void injectSyscalls(void){
 			CR0_WRITE_UNLOCK({
 				sys_call_table[sys_call_indices[targetIndex]] = totallyReal_syscallPtrs[targetIndex];
 			});
-			//pr_info("phony ptr injected as %p\n", (void *)sys_call_table[sys_call_indices[targetIndex]]);
+			pr_info("phony ptr injected as %p\n", (void *)sys_call_table[sys_call_indices[targetIndex]]);
 
 			pr_info("Injection complete for target %d\n", targetIndex);
 		}
