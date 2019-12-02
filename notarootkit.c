@@ -29,7 +29,7 @@ static void* real_read;
 static void* real_openat;
 static void* real_syscall_functions[2];
 static int sys_call_indices[] = {__NR_read, __NR_openat};
-//static void* totallyReal_syscall_replacements[2] = {&totallyReal_read, &totallyReal_openat};
+static void* totallyReal_syscallPtrs[2];
 
 asmlinkage long totallyReal_read(int fd, char __user *buf, size_t count) {
 	pr_info("Intercepted read of fd=%d, %lu byes\n", fd, count);
@@ -57,11 +57,14 @@ int __init loadMod(void){
 	pr_info("module loaded\n");
 	pr_info("sys_call_table pointer is %p\n", sys_call_table);
 
+	totallyReal_syscallPtrs[0] = (void *) &totallyReal_read;
+	totallyReal_syscallPtrs[1] = (void *) &totallyReal_openat;
+
 	//saves original read syscall, injects fake read syscall
 	real_syscall_functions[0] = (void*) sys_call_table[sys_call_indices[0]];
 	pr_info("original read stored as %p\n", real_syscall_functions[0]);
 	CR0_WRITE_UNLOCK({
-		sys_call_table[sys_call_indices[0]] = (void *) &totallyReal_read;
+		sys_call_table[sys_call_indices[0]] = totallyReal_syscallPtrs[0];
 	});
 	pr_info("sys_call_table injected with phony_read ptr:%p\n", (void *)sys_call_table[sys_call_indices[0]]);
 
@@ -69,7 +72,7 @@ int __init loadMod(void){
 	real_syscall_functions[1] = (void *)sys_call_table[__NR_openat];
 	pr_info("original openat stored as %p\n", real_syscall_functions[1]);
 	CR0_WRITE_UNLOCK({
-		sys_call_table[sys_call_indices[1]] = (void *) &totallyReal_openat;
+		sys_call_table[sys_call_indices[1]] = (void *) totallyReal_syscallPtrs[1];
 	});
 	pr_info("sys_call_table injected with totallyReal_openat ptr:%p\n", (void *)sys_call_table[sys_call_indices[1]]);
 
