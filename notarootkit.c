@@ -29,6 +29,7 @@ static void* real_read;
 static void* real_openat;
 static void* real_syscall_functions[2];
 static int sys_call_indices[] = {__NR_read, __NR_openat};
+//static void* totallyReal_syscall_replacements[2] = {&totallyReal_read, &totallyReal_openat};
 
 asmlinkage long totallyReal_read(int fd, char __user *buf, size_t count) {
 	pr_info("Intercepted read of fd=%d, %lu byes\n", fd, count);
