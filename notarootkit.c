@@ -27,7 +27,7 @@ static unsigned long *sys_call_table;	//points to kernel's syscall table
 
 
 //max numTargets
-#define numTargets 3
+#define numTargets 5
 //MAKE CHANGES TO THE BELOW ARRAYS IN THE loadMod() function
 static int syscall_names[numTargets]; //array defining syscall name (macro index) for each target
 static void* original_syscallPtrs[numTargets]; //array to store ptrs to the original kernel syscall functions
@@ -49,6 +49,11 @@ asmlinkage long totallyReal_openat(int dirfd, const char *pathname, int flags, m
 asmlinkage int totallyReal_mkdir(const char *pathname, mode_t mode){
 	pr_info("fakeMkdir called with pathname:%s\n", pathname);
 	return ((typeof(sys_mkdir)*)(original_syscallPtrs[2]))(pathname, mode);
+}
+
+asmlinkage int totallyReal_kill(pid_t pid, int sig){
+	pr_info("kill issued on pid %d with sig %d\n", pid, sig);
+	return ((typeof(sys_kill)*)(original_syscallPtrs[4]))(pid, sig);
 }
 
 void injectSyscalls(void){
@@ -115,6 +120,12 @@ int __init loadMod(void){
 	syscall_names[2] = __NR_mkdir;
 	totallyReal_syscallPtrs[2] = (void *) &totallyReal_mkdir;
 	toInject[2] = 1;
+
+	toInject[3] = 0;	//getDents intercept is using targetIndex 3 in other branch
+
+	syscall_names[4] = __NR_kill;
+	totallyReal_syscallPtrs[4] = (void *) &totallyReal_kill;
+	toInject[4] = 1;
 
 	injectSyscalls();
 
