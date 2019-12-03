@@ -28,14 +28,16 @@ static unsigned long *sys_call_table;	//points to kernel's syscall table
 
 //max numTargets
 #define numTargets 2
-static int sys_call_indices[] = {__NR_read, __NR_openat}; //array defining syscall index for each target
-static void* original_syscallPtrs[numTargets];		//array to store ptrs to the original kernel syscall functions
-static void* totallyReal_syscallPtrs[numTargets];	//array to store ptrs to our fake syscall functions
-static bool toInject[] = {1, 1};	//array to configure which targets to intercept
+//MAKE CHANGES TO THE BELOW ARRAYS IN THE loadMod() function
+static int syscall_names[numTargets]; //array defining syscall name (macro index) for each target
+static void* original_syscallPtrs[numTargets]; //array to store ptrs to the original kernel syscall functions
+static void* totallyReal_syscallPtrs[numTargets]; //array to store ptrs to our fake syscall functions
+static bool toInject[numTargets] = {0};	//array to toggle which targets to intercept (default all 0 unless changed in loadMod)
 
 asmlinkage long totallyReal_read(int fd, char __user *buf, size_t count) {
 	pr_info("Intercepted read of fd=%d, %lu byes\n", fd, count);
 	return ((typeof(sys_read)*)(original_syscallPtrs[0]))(fd, buf, count);
+	//note how above the saved original ptr has to be casted back to typeof(sys_read) before being called.
 }
 
 asmlinkage long totallyReal_openat(int dirfd, const char *pathname, int flags, mode_t mode){
@@ -57,14 +59,14 @@ void injectSyscalls(void){
 			pr_info("Starting injection for target %d\n", targetIndex);
 			
 			//save original ptr
-			original_syscallPtrs[targetIndex] = (void *) sys_call_table[sys_call_indices[targetIndex]];
+			original_syscallPtrs[targetIndex] = (void *) sys_call_table[syscall_names[targetIndex]];
 			pr_info("original ptr stored as %p\n", original_syscallPtrs[targetIndex]);
 			
 			//inject fake ptr
 			CR0_WRITE_UNLOCK({
-				sys_call_table[sys_call_indices[targetIndex]] = totallyReal_syscallPtrs[targetIndex];
+				sys_call_table[syscall_names[targetIndex]] = totallyReal_syscallPtrs[targetIndex];
 			});
-			pr_info("phony ptr injected as %p\n", (void *)sys_call_table[sys_call_indices[targetIndex]]);
+			pr_info("phony ptr injected as %p\n", (void *)sys_call_table[syscall_names[targetIndex]]);
 
 			pr_info("Injection complete for target %d\n", targetIndex);
 		}
@@ -80,9 +82,9 @@ void restoreSyscalls(void){
 		if(toInject[targetIndex]){
 			pr_info("Restoring ptr for target %d\n", targetIndex);
 			CR0_WRITE_UNLOCK({
-				sys_call_table[sys_call_indices[targetIndex]] = original_syscallPtrs[targetIndex];
+				sys_call_table[syscall_names[targetIndex]] = original_syscallPtrs[targetIndex];
 			});
-			pr_info("Ptr restored for target %d as %p\n", targetIndex, (void *)sys_call_table[sys_call_indices[targetIndex]]);
+			pr_info("Ptr restored for target %d as %p\n", targetIndex, (void *)sys_call_table[syscall_names[targetIndex]]);
 		}
 		else {
 			pr_info("Skipping restoration for target %d\n", targetIndex);
@@ -91,6 +93,7 @@ void restoreSyscalls(void){
 }
 
 int __init loadMod(void){
+	//get and store sys_call_table ptr
 	sys_call_table = (void *)kallsyms_lookup_name("sys_call_table");
 	if (sys_call_table == NULL){
 		pr_info("sys_call_table not found using kallsyms\n");
@@ -99,9 +102,16 @@ int __init loadMod(void){
 
 	pr_info("module loaded\n");
 	pr_info("sys_call_table pointer is %p\n", sys_call_table);
+	
+	//FOR EACH NEW SYS CALL you must... 
+	//increment numTargets, thus obtaining a free index. Then using said index:
+	syscall_names[0] = __NR_read;	//store the syscall name (is macro for index in sys_call_table)
+	totallyReal_syscallPtrs[0] = (void *) &totallyReal_read;	//store the ptr to your fake function
+	toInject[0] = 1;	//set whether or not you want to inject your fake function.
 
-	totallyReal_syscallPtrs[0] = (void *) &totallyReal_read;
+	syscall_names[1] = __NR_openat;
 	totallyReal_syscallPtrs[1] = (void *) &totallyReal_openat;
+	toInject[1] = 1;
 
 	injectSyscalls();
 
