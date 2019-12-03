@@ -27,7 +27,7 @@ static unsigned long *sys_call_table;	//points to kernel's syscall table
 
 
 //max numTargets
-#define numTargets 2
+#define numTargets 3
 //MAKE CHANGES TO THE BELOW ARRAYS IN THE loadMod() function
 static int syscall_names[numTargets]; //array defining syscall name (macro index) for each target
 static void* original_syscallPtrs[numTargets]; //array to store ptrs to the original kernel syscall functions
@@ -45,12 +45,11 @@ asmlinkage long totallyReal_openat(int dirfd, const char *pathname, int flags, m
 	return ((typeof(sys_openat)*)(original_syscallPtrs[1]))(dirfd, pathname, flags, mode);
 }
 
-/*
-asmlinkage int totallyReal_mkdir(const char __user *pathname, umode_t mode){
-	pr_info("fakeMkdir called!");
-	return oldNR(pathname, mode);
+
+asmlinkage int totallyReal_mkdir(const char *pathname, mode_t mode){
+	pr_info("fakeMkdir called with pathname:%s\n", pathname);
+	return ((typeof(sys_mkdir)*)(original_syscallPtrs[2]))(pathname, mode);
 }
-*/
 
 void injectSyscalls(void){
 	int targetIndex;
@@ -111,7 +110,11 @@ int __init loadMod(void){
 
 	syscall_names[1] = __NR_openat;
 	totallyReal_syscallPtrs[1] = (void *) &totallyReal_openat;
-	toInject[1] = 1;
+	toInject[1] = 0;
+
+	syscall_names[2] = __NR_mkdir;
+	totallyReal_syscallPtrs[2] = (void *) &totallyReal_mkdir;
+	toInject[2] = 1;
 
 	injectSyscalls();
 
