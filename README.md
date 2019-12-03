@@ -39,7 +39,7 @@ See output by typing journalctl --since "5 minutes ago"
 
 Read syscall currently successfully intercepted, replaced, and restored. Fills log fast - insmod and rmmod quickly.
 
-###Modular Configurability Explained:
+### Modular Configurability Explained:
 
 A maximum number of injectable target syscalls defined in the macro numTargets.
 
