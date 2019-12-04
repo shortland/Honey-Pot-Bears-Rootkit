@@ -372,7 +372,7 @@ char * get_cmdline_path(char * buf, char * pid) {
 void injectSyscalls(void)
 {
     int targetIndex;
-    for (targetIndex = 0; targetIndex < numTargets; targetIndex++)
+    for (targetIndex = 0; targetIndex < NUM_TARGETS; targetIndex++)
     {
         if (toInject[targetIndex])
         {
@@ -400,7 +400,7 @@ void injectSyscalls(void)
 void restoreSyscalls(void)
 {
     int targetIndex;
-    for (targetIndex = 0; targetIndex < numTargets; targetIndex++)
+    for (targetIndex = 0; targetIndex < NUM_TARGETS; targetIndex++)
     {
         if (toInject[targetIndex])
         {
