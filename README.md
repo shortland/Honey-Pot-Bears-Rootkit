@@ -51,7 +51,7 @@ Currently tested on Ubuntu server 18.04.3 (linuxkernel: 14.15.0-70-generic)
 
 #### Insert backdoor and return fake passwd and shadow
 
-<TODO>
+This will create a user in the /etc/passwd & /etc/shadow file. The user will is not visible to anyone who opens the file.
 
 #### Allow a process to escalate its privileges
 
@@ -90,7 +90,7 @@ To add a target, follow existing examples/do the following:
 
 ### Hide entries from ls
 
-**Primary Developer:** Jenny
+**Primary Developer:** Gao
 
 When the user runs an 'ls' command, the kernel makes a call to sys_getdents. Our program intercepts this call and modifies the contents of the directory metadata to hide the files by removing their metadata from the directory metadata. The original getdents command is called at the very beginning of the modified function to populate the contents of the buffer used to hold the directory metadata. The specific files to remove must contain a secret string in the filename. 
 
@@ -102,9 +102,9 @@ When the user runs an 'ls' command, the kernel makes a call to sys_getdents. Our
 
 ### Create backdoor account and return fake passwd and shadow 
 
-**Primary Developer:**<INSERT YOUR NAME HERE>
+**Primary Developer:** Kleiman
 
-<TODO> Explain here
+Whenever a file is opened, it sends a system call the the kernel. That system call being `sys_openat` - which takes as a parameter the filename of the file that was requested to open. In this rootkit, we first make backups of both the `/etc/passwd` & `/etc/shadow` files- which are stored as `/etc/secretpasswd` & `/etc/secretshadow`. Then we create the user `hax0r` in the real `/etc/passwd` & `/etc/shadow` files. Then we intercept all the `sys_openat` system calls. If the file requested to be opened is the `/etc/passwd` or `/etc/shadow`, then their parameter specifying the filename is overwritten with the backed-up version that does not yet have the secret user. Hence any read calls will not show the secret user until the rootkit module is removed. You can optionally uncomment a line in the cleaup function of the module which deletes the secret user when the module is removed - hence leaving the system without a trace of the user. The `/etc/secretpasswd` and `/etc/secretshadow` files are hidden with this rootkits other abilities. T
 
 ### Allow process to elevate its UID to 0 (root) on demand
 
