@@ -11,6 +11,7 @@
 #include <linux/fs.h>
 #include <asm/uaccess.h>
 
+
 #define CR0_WRITE_UNLOCK(x) \
 	do { \
 		unsigned long __cr0; \
