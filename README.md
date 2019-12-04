@@ -22,7 +22,7 @@
 
 3. David - Hides specific processes from the process table when a user does a "ps"
 
-4. Ibrahim - Give the ability to a malicious process to elevate its uid to 0 (root) upon demand (again this involves coming up with a protocol for doing that)
+4. Ibrahim - Implement framework for intercepting all syscalls. Give the ability to a malicious process to elevate its uid to 0 (root) upon demand.
 
 ## Resources Used
 [Linux Kernel Module Programming Guide](https://www.tldp.org/LDP/lkmpg/2.6/html/x121.html)
@@ -31,15 +31,43 @@
 
 [Trail of Bits](https://blog.trailofbits.com/2019/01/17/how-to-write-a-rootkit-without-really-trying/)
 
-## Notes
+## How to Use
 
-Currently tested on Ubuntu server 18.04.3 (shouldn't make a difference on desktop) & linuxkernel: 14.15.0-70-generic
+Currently tested on Ubuntu server 18.04.3 (linuxkernel: 14.15.0-70-generic)
 
-See output by typing journalctl --since "5 minutes ago"
+### Set Up Instructions
 
-Read syscall currently successfully intercepted, replaced, and restored. Fills log fast - insmod and rmmod quickly.
+1. Clone the repo
 
-### Modular Configurability Explained:
+2. Compile using `make` command
+
+3. run `sudo insmod notarootkit.ko `. Optionally include additional arguments: `sudo insmod notarootkit.ko secretEscalationSig=331`.
+
+### Attacker Usecases
+
+#### Hide a process
+
+<TODO>
+
+#### Insert backdoor and return fake passwd and shadow
+
+<TODO>
+
+#### Allow a process to escalate its privileges
+
+The process should run kill, passing the secretEscalationSig (default=42, can be configured on insmod).
+
+### Clean up
+
+`sudo rmmod notarootkit` to remove
+
+Note: See output by typing journalctl --since "5 minutes ago"
+
+## Detailed Implementation Explanation
+
+### Modular Syscall Interception
+
+**Primary Developer**: Khan
 
 A maximum number of injectable target syscalls defined in the macro numTargets.
 
@@ -60,4 +88,28 @@ To add a target, follow existing examples/do the following:
 6. Save the address to your fake syscall at the targetIndex of the totallyReal_syscallPtrs[]. As of now, do this in the loadMod() function.
 7. That's all you have to do. the injectSyscalls and restoreSyscalls functions will take care of the rest based on your input in steps 3-6.
 
+### Hide entries from ls
 
+**Primary Developer:**<INSERT YOUR NAME HERE>
+
+<TODO> Explain here
+
+### Hide entries from ps
+
+**Primary Developer:**<INSERT YOUR NAME HERE>
+
+<TODO> Explain here
+
+### Create backdoor account and return fake passwd and shadow 
+
+**Primary Developer:**<INSERT YOUR NAME HERE>
+
+<TODO> Explain here
+
+### Allow process to elevate its UID to 0 (root) on demand
+
+**Primary Developer**: Khan
+
+A process signals to the kernel module that it wishes to elevate its UID by calling 'kill' with a secret signal (default 42). The rootkit intercepts the kill syscall, detects use of the secret syscall, and changes the uid of the calling process to 0 (in the cred struct of the task struct of said process.)
+
+The kill command was used for communication since it has a field for variable input, signal. Sig has standard values 1-31, but can take any int. This makes it easy to define/identify non standard values to use for communication.
