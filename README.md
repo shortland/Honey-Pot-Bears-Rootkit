@@ -33,7 +33,7 @@
 
 ## How to Use
 
-Currently tested on Ubuntu server 18.04.3 (linuxkernel: 14.15.0-70-generic)
+Currently tested on Ubuntu server 18.04.3 (linuxkernel: 4.15.0-70-generic)
 
 ### Set Up Instructions
 
