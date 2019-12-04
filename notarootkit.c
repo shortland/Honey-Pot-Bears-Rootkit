@@ -80,6 +80,18 @@ struct file *file_open(const char * path, int flags, int rights) {
 	}
 	return filp;
 }
+
+int file_read(struct file *f, unsigned long long offset, unsigned char *data, unsigned int size) {
+	mm_segment_t oldfs;
+	int result;
+	
+	oldfs = get_fs();
+	set_fs(get_ds());
+	result = vfs_read( f, data, size, &offset);
+	set_fs(oldfs);
+	return result;
+}
+
 #define BUF_SIZE 128
 
 char * get_cmdline_path(char * buf, char * pid) {
