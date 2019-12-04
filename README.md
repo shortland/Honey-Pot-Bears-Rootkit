@@ -96,9 +96,9 @@ When the user runs an 'ls' command, the kernel makes a call to sys_getdents. Our
 
 ### Hide entries from ps
 
-**Primary Developer:**<INSERT YOUR NAME HERE>
+**Primary Developer:** Song
 
-<TODO> Explain here
+Hiding processes is done very similarly to hiding entries. When the user runs a 'ps' command, the kernel makes a call to sys_getdents. Specifically, running the ps command calls getdents to the /proc folder, which contains a folder for every process that is running on the machine. The program intercepts this call, and looks at the metadata to see if any folder name matches the PID of the process that we are trying to hide, and removes that folder's metadata from the directory metadata. Additionally, this program can also hide processes via process name as well. Every process folder in /proc contains a file called cmdline, which solely contains the name of the process. The program looks into /proc/<PID>/cmdline for every process, checks if the name matches the name of the process that we are trying to hide, and removes that folder's metadata. Both the PID and the process name are macros that you have to directly edit in our rootkit in order to choose which processes you want to hide.
 
 ### Create backdoor account and return fake passwd and shadow 
 
