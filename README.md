@@ -31,6 +31,10 @@
 
 [Trail of Bits](https://blog.trailofbits.com/2019/01/17/how-to-write-a-rootkit-without-really-trying/)
 
+[Goofkit](https://github.com/RITRedteam/goofkit/blob/master/goof.c)
+
+[Diamorphine](https://github.com/m0nad/Diamorphine/blob/master/diamorphine.c)
+
 ## How to Use
 
 Currently tested on Ubuntu server 18.04.3 (linuxkernel: 4.15.0-70-generic)
