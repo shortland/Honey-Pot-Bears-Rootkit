@@ -2,7 +2,7 @@
 
 ## Project Description
 
-[CSE 331 Course Project Description](https://www.securitee.org/teaching/cse331/projects/project1.html)
+[Course Project Description](https://www.securitee.org/teaching/cse331/projects/project1.html)
 
 ## Team Members
 
